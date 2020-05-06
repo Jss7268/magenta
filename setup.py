@@ -1,4 +1,5 @@
 # Copyright 2020 The Magenta Authors.
+# Modifications Copyright 2020 Jack Spencer Smith.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -22,7 +23,7 @@ from setuptools import setup
 # execute (e.g., tensorflow, pretty_midi, etc.).
 # Makes the __version__ variable available.
 with open('magenta/version.py') as in_file:
-  exec(in_file.read())  # pylint: disable=exec-used
+    exec(in_file.read())  # pylint: disable=exec-used
 
 REQUIRED_PACKAGES = [
     'IPython',
@@ -54,7 +55,7 @@ REQUIRED_PACKAGES = [
     'sk-video',
     'dm-sonnet < 2.0.0',  # Sonnet 2 requires TF2.
     'sox >= 1.3.7',
-    #'tensorflow >= 1.15.0, < 2.0.0',  # Magenta is not yet TF2 compatible.
+    # 'tensorflow >= 1.15.0, < 2.0.0',  # Magenta is not yet TF2 compatible.
     'tensorflow >= 2.0.0',  # Magenta is not yet TF2 compatible.
 
     'tensorflow-datasets >= 1.0.2',
@@ -66,7 +67,8 @@ REQUIRED_PACKAGES = [
     'Keras',
     'pydot',
     'graphviz',
-    'dotmap'
+    'dotmap',
+    'scikit-learn',
 ]
 
 EXTRAS_REQUIRE = {
@@ -105,12 +107,12 @@ CONSOLE_SCRIPTS = [
     'magenta.models.music_vae.music_vae_train',
     'magenta.models.nsynth.wavenet.nsynth_generate',
     'magenta.models.nsynth.wavenet.nsynth_save_embeddings',
-    'magenta.models.onsets_frames_transcription.onsets_frames_transcription_create_dataset_maps',
-    'magenta.models.onsets_frames_transcription.onsets_frames_transcription_create_dataset_maestro',
-    'magenta.models.onsets_frames_transcription.onsets_frames_transcription_infer',
-    'magenta.models.onsets_frames_transcription.onsets_frames_transcription_train',
-    'magenta.models.onsets_frames_transcription.onsets_frames_transcription_transcribe',
-    'magenta.models.onsets_frames_transcription.realtime.onsets_frames_transcription_realtime',
+    'magenta.models.polyamp.onsets_frames_transcription_create_dataset_maps',
+    'magenta.models.polyamp.onsets_frames_transcription_create_dataset_maestro',
+    'magenta.models.polyamp.onsets_frames_transcription_infer',
+    'magenta.models.polyamp.onsets_frames_transcription_train',
+    'magenta.models.polyamp.onsets_frames_transcription_transcribe',
+    'magenta.models.polyamp.realtime.onsets_frames_transcription_realtime',
     'magenta.models.performance_rnn.performance_rnn_create_dataset',
     'magenta.models.performance_rnn.performance_rnn_generate',
     'magenta.models.performance_rnn.performance_rnn_train',

@@ -1,25 +1,18 @@
-import operator
-
-import numpy as np
 import tensorflow as tf
 from dotmap import DotMap
 from tensorflow.keras import backend as K
 from tensorflow.keras.layers import *
 from tensorflow.keras.models import Model
 
-from magenta.models.onsets_frames_transcription import constants, data, infer_util
-from magenta.models.onsets_frames_transcription.accuracy_util import flatten_accuracy_wrapper, \
-    multi_track_prf_wrapper, flatten_loss_wrapper, multi_track_loss_wrapper, \
-    multi_track_present_accuracy_wrapper, single_track_present_accuracy_wrapper
-from magenta.models.onsets_frames_transcription.instrument_family_mappings import \
-    family_to_midi_instrument
-from magenta.models.onsets_frames_transcription.layer_util import NoteCroppingsToPianorolls
-from magenta.models.onsets_frames_transcription.loss_util import log_loss_wrapper
-from magenta.models.onsets_frames_transcription.timbre_dataset_reader import NoteCropping
+from magenta.models.polyamp import constants, infer_util
+from magenta.models.polyamp.accuracy_util import multi_track_present_accuracy_wrapper, multi_track_prf_wrapper, \
+    single_track_present_accuracy_wrapper
+from magenta.models.polyamp.loss_util import full_model_loss_wrapper
+from magenta.models.polyamp.layer_util import NoteCroppingsToPianorolls
+from magenta.models.polyamp.timbre_dataset_reader import NoteCropping
+
 
 # \[0\.[2-7][0-9\.,\ ]+\]$\n.+$\n\[0\.[2-7]
-from magenta.models.onsets_frames_transcription.timbre_model import get_timbre_output_layer
-from magenta.music import midi_io
 
 
 def get_default_hparams():
@@ -128,10 +121,6 @@ class FullModel:
                                                                value=-1e+7)
         return tf.convert_to_tensor(padded)
 
-    def separate_batches(self, input_list):
-        # TODO implement
-        raise NotImplementedError
-
     def get_model(self):
         spec_512 = Input(shape=(None, constants.SPEC_BANDS, 1), name='midi_spec')
         spec_256 = Input(shape=(None, constants.SPEC_BANDS, 1), name='timbre_spec')
@@ -160,12 +149,6 @@ class FullModel:
         timbre_probs = self.timbre_model.call([spec_256, note_croppings])
         # timbre_probs = get_timbre_output_layer(self.hparams)([spec_256, note_croppings])
 
-        if self.hparams.timbre_coagulate_mini_batches:
-            # re-separate
-            timbre_probs = Lambda(self.separate_batches,
-                                  dynamic=True,
-                                  output_shape=(None, self.hparams.timbre_num_classes))(
-                [timbre_probs])
         expand_dims = Lambda(lambda x_list: K.expand_dims(x_list[0], axis=x_list[1]))
         float_cast = Lambda(lambda x: K.cast_to_floatx(x))
 
@@ -208,12 +191,12 @@ class FullModel:
             [pianoroll_no_gradient, expanded_offsets])
 
         losses = {
-            'multi_frames': multi_track_loss_wrapper(self.hparams,
-                                                     self.hparams.frames_true_weighing),
-            'multi_onsets': multi_track_loss_wrapper(self.hparams,
-                                                     self.hparams.onsets_true_weighing),
-            'multi_offsets': multi_track_loss_wrapper(self.hparams,
-                                                      self.hparams.offsets_true_weighing),
+            'multi_frames': full_model_loss_wrapper(self.hparams,
+                                                    self.hparams.frames_true_weighing),
+            'multi_onsets': full_model_loss_wrapper(self.hparams,
+                                                    self.hparams.onsets_true_weighing),
+            'multi_offsets': full_model_loss_wrapper(self.hparams,
+                                                     self.hparams.offsets_true_weighing),
         }
 
         accuracies = {

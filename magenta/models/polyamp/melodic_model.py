@@ -1,46 +1,33 @@
+# Copyright 2020 Jack Spencer Smith.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+"""Melodic Transcription Model based on the
+Onsets and Frames model: Copyright 2020 The Magenta Authors
+"""
+
 from __future__ import absolute_import, division, print_function
 
-import os
-
-import sklearn
 from dotmap import DotMap
+from tensorflow.keras import backend as K
+from tensorflow.keras.layers import BatchNormalization, Bidirectional, Conv2D, Dense, Dropout, ELU, \
+    Input, LSTM, Lambda, MaxPooling2D, Reshape, concatenate
+from tensorflow.keras.models import Model
 
-# if not using plaidml, use tensorflow.keras.* instead of keras.*
-# if using plaidml, use keras.*
-import tensorflow.compat.v1 as tf
-
-from magenta.common import tf_utils
-from magenta.models.onsets_frames_transcription.accuracy_util import binary_accuracy_wrapper, \
-    f1_wrapper, true_positive_wrapper
-from magenta.models.onsets_frames_transcription.loss_util import log_loss_wrapper, \
-    log_loss_flattener
-from sklearn.metrics import f1_score
-
-FLAGS = tf.app.flags.FLAGS
-
-if FLAGS.using_plaidml:
-    import plaidml.keras
-
-    plaidml.keras.install_backend()
-
-    from keras import backend as K
-    from keras.regularizers import l2
-    from keras.initializers import VarianceScaling, he_uniform
-    from keras.layers import Activation, BatchNormalization, Conv2D, Dense, Dropout, \
-    Input, MaxPooling2D, Reshape, concatenate, ELU, Lambda
-    from keras.models import Model
-else:
-    # os.environ["KERAS_BACKEND"] = "plaidml.keras.backend"
-
-    from tensorflow.keras import backend as K
-    from tensorflow.keras.regularizers import l2
-    from tensorflow.keras.initializers import VarianceScaling, he_uniform
-    from tensorflow.keras.layers import Activation, BatchNormalization, Bidirectional, Conv2D, \
-        Dense, Dropout, \
-        Input, LSTM, MaxPooling2D, Reshape, concatenate, ELU, Lambda
-    from tensorflow.keras.models import Model
-
-from magenta.models.onsets_frames_transcription import constants
+from magenta.models.polyamp import constants
+from magenta.models.polyamp.accuracy_util import binary_accuracy_wrapper, \
+    f1_wrapper
+from magenta.models.polyamp.loss_util import melodic_loss_wrapper
 
 
 def get_default_hparams():
@@ -57,13 +44,7 @@ def get_default_hparams():
         'combined_lstm_units': 256,
         'acoustic_rnn_stack_size': 1,
         'combined_rnn_stack_size': 1,
-        'activation_loss': False,
-        'stop_activation_gradient': False,
-        'stop_onset_gradient': True,
-        'stop_offset_gradient': True,
-        'weight_frame_and_activation_loss': False,
         'share_conv_features': False,
-        # many only 3 and just an extra wide temporal one of 7
         'temporal_sizes': [3, 3, 3, 3],
         'freq_sizes': [3, 3, 3, 5],
         'num_filters': [48, 48, 96, 96],
@@ -72,10 +53,7 @@ def get_default_hparams():
         'use_batch_normalization': False,
         'fc_size': 768,
         'fc_dropout_drop_amt': 0.5,
-        'use_lengths': False,
-        'use_cudnn': True,
         'rnn_dropout_drop_amt': 0.0,
-        'bidirectional': True,
         'predict_frame_threshold': 0.5,
         'predict_onset_threshold': 0.5,
         'active_onset_threshold': 0.6,
@@ -83,7 +61,8 @@ def get_default_hparams():
         'frames_true_weighing': 2,
         'onsets_true_weighing': 8,
         'offsets_true_weighing': 8,
-        'input_shape': (None, 229, 1),  # (None, 229, 1),
+        'input_shape': (None, 229, 1),
+        'melodic_leaky_alpha': 0.33,
     }
 
 
@@ -122,7 +101,8 @@ def acoustic_dense_layer(stack_name, hparams, lstm_units):
         outputs = Dropout(hparams.fc_dropout_drop_amt)(outputs)
 
         if lstm_units:
-            outputs = lstm_layer(stack_name, lstm_units, stack_size=hparams.acoustic_rnn_stack_size)(outputs)
+            outputs = lstm_layer(stack_name, lstm_units,
+                                 stack_size=hparams.acoustic_rnn_stack_size)(outputs)
         return outputs
 
     return acoustic_dense_fn
@@ -133,7 +113,7 @@ def acoustic_model_layer(stack_name, hparams):
         bn_relu_fn = lambda x, name=None: ELU(hparams.timbre_leaky_alpha)(
             BatchNormalization(scale=False, name=f'{name}_batch_norm')(x))
     else:
-        bn_relu_fn = lambda x, name=None: ELU(hparams.timbre_leaky_alpha)(x)
+        bn_relu_fn = lambda x, name=None: ELU(hparams.melodic_leaky_alpha)(x)
 
     conv_bn_relu_layer = lambda num_filters, conv_temporal_size, conv_freq_size, name=None: lambda \
             x: bn_relu_fn(
@@ -143,7 +123,6 @@ def acoustic_model_layer(stack_name, hparams):
             padding='same',
             use_bias=False,
             kernel_initializer='he_uniform',
-            # kernel_regularizer=l2(hparams.timbre_l2_regularizer),
             name=name
         )(x), name=name)
 
@@ -171,36 +150,32 @@ def acoustic_model_layer(stack_name, hparams):
 
 def midi_pitches_layer(name=None):
     def midi_pitches_fn(inputs):
-        # inputs should be of type keras.layers.*
         outputs = Dense(constants.MIDI_PITCHES, activation='sigmoid', name=name)(inputs)
         return outputs
 
     return midi_pitches_fn
 
 
-def midi_prediction_model(hparams=None):
+def get_melodic_model(hparams=None):
     if hparams is None:
         hparams = DotMap(get_default_hparams())
     inputs = Input(shape=(hparams.input_shape[0], hparams.input_shape[1], hparams.input_shape[2],),
                    name='spec')
-    weights = Input(shape=(None, constants.MIDI_PITCHES,), name='weights')
 
-    # if K.learning_phase():
-
-    # Onset prediction model
+    # Onset prediction model.
     onset_conv = acoustic_model_layer('onset', hparams)(inputs)
 
     onset_outputs = acoustic_dense_layer('onset', hparams, hparams.onset_lstm_units)(onset_conv)
 
     onset_probs = midi_pitches_layer('onsets')(onset_outputs)
 
-    # Offset prediction model
+    # Offset prediction model.
     offset_conv = acoustic_model_layer('offset', hparams)(inputs)
     offset_outputs = acoustic_dense_layer('offset', hparams, hparams.offset_lstm_units)(offset_conv)
 
     offset_probs = midi_pitches_layer('offsets')(offset_outputs)
 
-    # Activation prediction model
+    # Activation prediction model.
     if not hparams.share_conv_features:
         activation_conv = acoustic_model_layer('activation', hparams)(inputs)
         activation_outputs = acoustic_dense_layer('activation', hparams, hparams.frame_lstm_units)(
@@ -222,14 +197,14 @@ def midi_prediction_model(hparams=None):
     else:
         outputs = combined_probs
 
-    # Frame prediction
+    # Frame prediction.
     frame_probs = midi_pitches_layer('frames')(outputs)
 
-    # use recall_weighing > 0 to care more about recall than precision
+    # Use recall_weighing > 0 to care more about recall than precision.
     losses = {
-        'frames': log_loss_wrapper(hparams.frames_true_weighing),
-        'onsets': log_loss_wrapper(hparams.onsets_true_weighing),
-        'offsets': log_loss_wrapper(hparams.offsets_true_weighing),
+        'frames': melodic_loss_wrapper(hparams.frames_true_weighing),
+        'onsets': melodic_loss_wrapper(hparams.onsets_true_weighing),
+        'offsets': melodic_loss_wrapper(hparams.offsets_true_weighing),
     }
 
     accuracies = {
@@ -241,11 +216,9 @@ def midi_prediction_model(hparams=None):
                     f1_wrapper(hparams.predict_offset_threshold)]
     }
 
-    return Model(inputs=[
-        inputs,
-        # weights,
-        # Input(shape=(None,)),
-    ],
-        outputs=[frame_probs, onset_probs, offset_probs]), \
-           losses, \
-           accuracies
+    return (
+        Model(inputs=[inputs],
+              outputs=[frame_probs, onset_probs, offset_probs]),
+        losses,
+        accuracies
+    )

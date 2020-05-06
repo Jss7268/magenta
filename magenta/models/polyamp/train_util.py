@@ -32,14 +32,14 @@ import tensorflow.keras.backend as K
 import numpy as np
 
 # Should not be called from within the graph to avoid redundant summaries.
-from magenta.models.onsets_frames_transcription import audio_label_data_utils, constants
-from magenta.models.onsets_frames_transcription.callback import EvaluationMetrics, \
+from magenta.models.polyamp import audio_label_data_utils, constants
+from magenta.models.polyamp.callback import EvaluationMetrics, \
     MidiPredictionMetrics
-from magenta.models.onsets_frames_transcription.data import wav_to_spec_op
-from magenta.models.onsets_frames_transcription.data_generator import DataGenerator
-from magenta.models.onsets_frames_transcription.metrics import f1_score
-from magenta.models.onsets_frames_transcription.model_util import ModelWrapper, ModelType
-from magenta.models.onsets_frames_transcription.timbre_dataset_reader import create_spectrogram
+from magenta.models.polyamp.dataset_reader import wav_to_spec_op
+from magenta.models.polyamp.data_generator import DataGenerator
+from magenta.models.polyamp.metrics import f1_score
+from magenta.models.polyamp.model_util import ModelWrapper, ModelType
+from magenta.models.polyamp.timbre_dataset_reader import create_spectrogram
 from magenta.music import midi_io, audio_io
 from magenta.music.protobuf import music_pb2
 
@@ -106,7 +106,7 @@ def train(data_fn,
         shuffle_examples=True,
         skip_n_initial_records=random.randint(0, 128))
 
-    model = ModelWrapper(model_dir, model_type, id=hparams.model_id,
+    model = ModelWrapper(model_dir, model_type, id_=hparams.model_id,
                          dataset=transcription_data(params=hparams),
                          batch_size=hparams.batch_size, steps_per_epoch=hparams.epochs_per_save,
                          hparams=hparams)
@@ -132,7 +132,7 @@ def train(data_fn,
     # model.load_model(20.64, id='2-glob', epoch_num=38)
     # model.load_model(17.81, id='2-glob', epoch_num=27)
 
-    if model_type == ModelType.MIDI:
+    if model_type == ModelType.MELODIC:
         # model.load_model(43.15, 58.60, id='big-lstm', epoch_num=98)
         # model.load_model(69.12, 82.47, id='big-lstm-precise', epoch_num=66)
         # model.load_model(82.94, 80.47, id='big-lstm-for-f1', epoch_num=149)
@@ -153,7 +153,7 @@ def train(data_fn,
         # model.load_model(5.17, id=hparams.model_id, epoch_num=8)
     else:
         print('building full model')
-        midi_model = ModelWrapper(model_dir, ModelType.MIDI, hparams=hparams)
+        midi_model = ModelWrapper(model_dir, ModelType.MELODIC, hparams=hparams)
         midi_model.build_model(compile=False)
         midi_model.load_newest()
         timbre_model = ModelWrapper(model_dir, ModelType.TIMBRE, hparams=hparams)
@@ -187,15 +187,15 @@ def transcribe(data_fn,
     else:
         transcription_data = None
 
-    if model_type == ModelType.MIDI:
-        midi_model = ModelWrapper(model_dir, ModelType.MIDI, dataset=transcription_data,
-                                  batch_size=1, id=hparams.model_id, hparams=hparams)
+    if model_type == ModelType.MELODIC:
+        midi_model = ModelWrapper(model_dir, ModelType.MELODIC, dataset=transcription_data,
+                                  batch_size=1, id_=hparams.model_id, hparams=hparams)
         # midi_model.load_model(74.87, 82.45, 'weights-zero')
         # midi_model.load_model(82.94, 80.47, id='big-lstm-for-f1', epoch_num=149)
         midi_model.build_model(compile=False)
         midi_model.load_newest(hparams.load_id)
     elif model_type == ModelType.TIMBRE:
-        timbre_model = ModelWrapper(model_dir, ModelType.TIMBRE, id=hparams.model_id,
+        timbre_model = ModelWrapper(model_dir, ModelType.TIMBRE, id_=hparams.model_id,
                                     dataset=transcription_data, batch_size=1,
                                     hparams=hparams)
         timbre_model.build_model(compile=False)
@@ -203,7 +203,7 @@ def transcribe(data_fn,
 
     if data_fn:
         while True:
-            if model_type == ModelType.MIDI:
+            if model_type == ModelType.MELODIC:
                 x, _ = midi_model.generator.get()
                 sequence_prediction = midi_model.predict_from_spec(x[0])
                 midi_filename = path + file_suffix + '.midi'
@@ -219,7 +219,7 @@ def transcribe(data_fn,
         for filename in filenames:
             wav_data = tf.io.gfile.GFile(filename, 'rb').read()
 
-            if model_type == ModelType.MIDI:
+            if model_type == ModelType.MELODIC:
                 spec = wav_to_spec_op(wav_data, hparams=hparams)
 
                 # add "batch" and channel dims
@@ -341,8 +341,8 @@ def evaluate(data_fn,
         model_wrapper.load_newest(hparams.load_id)
         model_wrapper = timbre_model
         # model_wrapper.load_newest(hparams.load_id)
-    elif model_type is ModelType.MIDI:
-        midi_model = ModelWrapper(model_dir, ModelType.MIDI, hparams=hparams, batch_size=1)
+    elif model_type is ModelType.MELODIC:
+        midi_model = ModelWrapper(model_dir, ModelType.MELODIC, hparams=hparams, batch_size=1)
         midi_model.build_model(compile=False)
         model_wrapper.build_model(compile=False, midi_model=midi_model.get_model())
         midi_model.load_newest(hparams.load_id)
@@ -356,7 +356,7 @@ def evaluate(data_fn,
                               coagulate_mini_batches=False)
     save_dir = f'{model_dir}/{model_type.name}/{model_wrapper.id}_eval'
 
-    if model_type is ModelType.MIDI:
+    if model_type is ModelType.MELODIC:
         metrics = MidiPredictionMetrics(generator=generator, note_based=note_based, hparams=hparams, save_dir=save_dir)
     else:
         metrics = EvaluationMetrics(generator=generator, hparams=hparams, save_dir=save_dir, is_full=model_type is ModelType.FULL)
@@ -369,7 +369,7 @@ def evaluate(data_fn,
 
     metric_names = ['true_positives', 'false_positives', 'false_negatives']
 
-    if model_type is not ModelType.MIDI:
+    if model_type is not ModelType.MELODIC:
         # instrument specific metrics
         instrument_true_positives, instrument_false_positives, instrument_false_negatives = [
             functools.reduce(

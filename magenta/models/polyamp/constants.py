@@ -1,4 +1,5 @@
 # Copyright 2020 The Magenta Authors.
+# Modifications Copyright 2020 Jack Spencer Smith.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -27,7 +28,7 @@ MIDI_PITCHES = MAX_MIDI_PITCH - MIN_MIDI_PITCH + 1
 
 MIN_TIMBRE_PITCH = librosa.note_to_midi('A0')
 MAX_TIMBRE_PITCH = librosa.note_to_midi('C9')
-TIMBRE_PITCHES = MAX_TIMBRE_PITCH - MIN_TIMBRE_PITCH
+TIMBRE_PITCHES = MAX_TIMBRE_PITCH - MIN_TIMBRE_PITCH  # 100
 
 FAMILY_IDX_STRINGS = {
     0: 'bass',
@@ -49,7 +50,6 @@ FAMILY_IDX_STRINGS = {
 SPEC_BANDS = 229
 TIMBRE_SPEC_BANDS = 229
 
-# is 28
-BINS_PER_OCTAVE = math.ceil(TIMBRE_SPEC_BANDS / (TIMBRE_PITCHES / 12))
+BINS_PER_OCTAVE = math.ceil(TIMBRE_SPEC_BANDS / (TIMBRE_PITCHES / 12))  # 28
 
 NUM_INSTRUMENT_FAMILIES = 11
