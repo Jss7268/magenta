@@ -131,9 +131,9 @@ def run(argv, config_map):
             logging.info('Running inference...')
             sequence_prediction = model_wrapper.predict_from_spec(spec, qpm=FLAGS.qpm)
         else:
-            midi_spec = samples_to_cqt(samples, hparams=hparams)
+            melodic_spec = samples_to_cqt(samples, hparams=hparams)
             if hparams.spec_log_amplitude:
-                midi_spec = librosa.power_to_db(midi_spec)
+                melodic_spec = librosa.power_to_db(melodic_spec)
 
             temp_hparams = copy.deepcopy(hparams)
             temp_hparams.spec_hop_length = hparams.timbre_hop_length
@@ -146,7 +146,7 @@ def run(argv, config_map):
                 timbre_spec /= K.max(timbre_spec)
 
             # Add "batch" and channel dims.
-            midi_spec = tf.reshape(midi_spec, (1, *midi_spec.shape, 1))
+            melodic_spec = tf.reshape(melodic_spec, (1, *melodic_spec.shape, 1))
             timbre_spec = tf.reshape(timbre_spec, (1, *timbre_spec.shape, 1))
 
             logging.info('Running inference...')
@@ -157,7 +157,7 @@ def run(argv, config_map):
                 present_instruments = None
 
             sequence_prediction = (
-                model_wrapper.predict_multi_sequence(midi_spec=midi_spec,
+                model_wrapper.predict_multi_sequence(melodic_spec=melodic_spec,
                                                      timbre_spec=timbre_spec,
                                                      present_instruments=present_instruments,
                                                      qpm=FLAGS.qpm)

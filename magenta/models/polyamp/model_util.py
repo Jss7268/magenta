@@ -28,7 +28,7 @@ from tensorflow.keras import Model
 from tensorflow.keras.optimizers import Adam
 from tensorflow.keras.utils import plot_model
 
-from magenta.models.polyamp import constants, infer_util
+from magenta.models.polyamp import constants, sequence_prediction_util
 from magenta.models.polyamp.accuracy_util import convert_multi_instrument_probs_to_predictions, \
     multi_track_prf_wrapper
 from magenta.models.polyamp.callback import FullPredictionMetrics, \
@@ -38,7 +38,7 @@ from magenta.models.polyamp.full_model import FullModel
 from magenta.models.polyamp.layer_util import get_croppings_for_single_image
 from magenta.models.polyamp.melodic_model import get_melodic_model
 from magenta.models.polyamp.timbre_dataset_reader import NoteCropping
-from magenta.models.polyamp.timbre_model import timbre_prediction_model
+from magenta.models.polyamp.timbre_model import get_timbre_model
 
 
 class ModelType(Enum):
@@ -77,8 +77,7 @@ class ModelWrapper:
         if dataset is None:
             self.generator = None
         else:
-            self.generator = DataGenerator(self.dataset, self.batch_size, self.steps_per_epoch,
-                                           use_numpy=False)
+            self.generator = DataGenerator(self.dataset, self.batch_size, use_numpy=False)
         save_dir = f'{self.model_dir}/{self.type.name}/{self.id}'
         if self.type is ModelType.MELODIC:
             self.metrics = MidiPredictionMetrics(self.generator, self.hparams, save_dir=save_dir)
@@ -108,7 +107,7 @@ class ModelWrapper:
         np.save(self.history_save_format.format(*id_tup), [self.metrics.metrics_history])
         print('Model weights saved at: ' + self.model_save_format.format(*id_tup))
 
-    def train_and_save(self, epochs=1, epoch_num=0):
+    def train_and_save(self, epoch_num=0):
         if self.model is None:
             self.build_model()
 
@@ -214,15 +213,13 @@ class ModelWrapper:
         # frame_predictions = tf.expand_dims(frame_predictions, axis=0)
         # onset_predictions = tf.expand_dims(onset_predictions, axis=0)
         # offset_predictions = tf.expand_dims(offset_predictions, axis=0)
-        sequence = infer_util.predict_sequence(
-            frame_predictions=frame_predictions,
-            onset_predictions=onset_predictions,
-            offset_predictions=offset_predictions,
-            active_onsets=active_onsets,
-            velocity_values=None,
-            hparams=self.hparams,
-            min_pitch=constants.MIN_MIDI_PITCH,
-            qpm=qpm)
+        sequence = sequence_prediction_util.predict_sequence(frame_predictions=frame_predictions,
+                                                             onset_predictions=onset_predictions,
+                                                             offset_predictions=offset_predictions,
+                                                             velocity_values=None,
+                                                             min_pitch=constants.MIN_MIDI_PITCH,
+                                                             hparams=self.hparams, active_onsets=active_onsets,
+                                                             qpm=qpm)
         return sequence
 
     # Stairway to heaven transcription times
@@ -230,21 +227,21 @@ class ModelWrapper:
     # duration=16: 01:46
     # duration=32: 02:07
     # duration=8: 01:40
-    def _split_and_predict(self, midi_spec, timbre_spec, present_instruments, duration=16):
+    def _split_and_predict(self, melodic_spec, timbre_spec, present_instruments, duration=16):
         samples_length = duration * self.hparams.sample_rate
         frames, onsets, offsets = None, None, None
-        midi_spec_len = K.int_shape(midi_spec)[1]
+        melodic_spec_len = K.int_shape(melodic_spec)[1]
         timbre_spec_len = K.int_shape(timbre_spec)[1]
         edge_spacing = 16
-        for i in range(0, K.int_shape(midi_spec)[1] * self.hparams.spec_hop_length, samples_length):
+        for i in range(0, K.int_shape(melodic_spec)[1] * self.hparams.spec_hop_length, samples_length):
             m_start = int(i / self.hparams.spec_hop_length)
-            m_end = min(midi_spec_len,
+            m_end = min(melodic_spec_len,
                         int(edge_spacing * 2 + (i + samples_length) / self.hparams.spec_hop_length))
             t_start = int(i / self.hparams.timbre_hop_length)
             t_end = min(timbre_spec_len, int(
                 edge_spacing * 4 + (i + samples_length) / self.hparams.timbre_hop_length))
             split_pred = self.model.call([
-                K.expand_dims(midi_spec[0, m_start:m_end], 0),
+                K.expand_dims(melodic_spec[0, m_start:m_end], 0),
                 K.expand_dims(timbre_spec[0, t_start:t_end], 0),
                 K.cast_to_floatx(present_instruments)],
                 training=False)
@@ -264,11 +261,11 @@ class ModelWrapper:
                 np.expand_dims(onsets, 0),
                 np.expand_dims(offsets, 0)]
 
-    def predict_multi_sequence(self, midi_spec, timbre_spec, present_instruments=None, qpm=None):
+    def predict_multi_sequence(self, melodic_spec, timbre_spec, present_instruments=None, qpm=None):
         if present_instruments is None:
             present_instruments = K.expand_dims(np.ones(self.hparams.timbre_num_classes), 0)
-        # y_pred = self.model.predict_on_batch([midi_spec, timbre_spec, present_instruments])
-        y_pred = self._split_and_predict(midi_spec, timbre_spec, present_instruments)
+        # y_pred = self.model.predict_on_batch([melodic_spec, timbre_spec, present_instruments])
+        y_pred = self._split_and_predict(melodic_spec, timbre_spec, present_instruments)
         multi_track_prf_wrapper(threshold=self.hparams.predict_frame_threshold,
                                 multiple_instruments_threshold=self.hparams.multiple_instruments_threshold,
                                 hparams=self.hparams, print_report=True, only_f1=False)(
@@ -277,7 +274,7 @@ class ModelWrapper:
         print(
             f'total mean: {[f"{i}:{K.max(permuted_y_probs[i])}" for i, x in enumerate(permuted_y_probs)]}')
 
-        # self.model.train_on_batch([midi_spec, timbre_spec, present_instruments], [K.cast_to_floatx(y > 0.5) for y in y_pred])
+        # self.model.train_on_batch([melodic_spec, timbre_spec, present_instruments], [K.cast_to_floatx(y > 0.5) for y in y_pred])
 
         frame_predictions = convert_multi_instrument_probs_to_predictions(
             y_pred[0],
@@ -313,10 +310,10 @@ class ModelWrapper:
             offset_predictions = tf.logical_and(offset_predictions, present_instruments > 0)
             active_onsets = tf.logical_and(active_onsets, present_instruments > 0)
 
-        return infer_util.predict_multi_sequence(frame_predictions, onset_predictions,
-                                                 offset_predictions, active_onsets, qpm=qpm,
-                                                 hparams=self.hparams,
-                                                 min_pitch=constants.MIN_MIDI_PITCH)
+        return sequence_prediction_util.predict_multi_sequence(frame_predictions, onset_predictions,
+                                                               offset_predictions, active_onsets, qpm=qpm,
+                                                               hparams=self.hparams,
+                                                               min_pitch=constants.MIN_MIDI_PITCH)
 
     def predict_from_spec(self, spec=None, num_croppings=None, additional_spec=None, num_notes=None,
                           qpm=None,
@@ -326,7 +323,7 @@ class ModelWrapper:
         elif self.type == ModelType.TIMBRE:
             return self._predict_timbre(spec, num_croppings)
         else:
-            return self.predict_multi_sequence(midi_spec=spec, timbre_spec=additional_spec)
+            return self.predict_multi_sequence(melodic_spec=spec, timbre_spec=additional_spec)
 
     def load_newest(self, id='*'):
         try:
@@ -387,7 +384,7 @@ class ModelWrapper:
                 self.model = midi_model
 
         if self.type == ModelType.TIMBRE or self.type == ModelType.FULL and timbre_model is None:
-            timbre_model, losses, accuracies = timbre_prediction_model(self.hparams)
+            timbre_model, losses, accuracies = get_timbre_model(self.hparams)
 
             if self.type == ModelType.TIMBRE:
                 if compile:
@@ -398,7 +395,7 @@ class ModelWrapper:
                 self.model = timbre_model
         if self.type == ModelType.FULL:  # self.type == ModelType.FULL:
             self.model, losses, accuracies = FullModel(midi_model, timbre_model,
-                                                       self.hparams).get_model()
+                                                       self.hparams).get_full_model()
             self.model.compile(Adam(self.hparams.full_learning_rate,
                                     # decay=self.hparams.timbre_decay_rate,
                                     # clipnorm=self.hparams.timbre_clip_norm

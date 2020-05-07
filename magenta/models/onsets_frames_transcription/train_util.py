@@ -246,5 +246,4 @@ def evaluate(master,
   while True:
     checkpoint_path = contrib_training.wait_for_new_checkpoint(
         model_dir, last_checkpoint=checkpoint_path)
-    estimator.evaluate(input_fn=transcription_data, steps=num_steps,
-                       checkpoint_path=checkpoint_path, name=name)
+    estimator.evaluate(,

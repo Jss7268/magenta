@@ -18,7 +18,7 @@ import tensorflow.keras.backend as K
 from tensorflow.keras.metrics import categorical_accuracy
 from sklearn.metrics import precision_recall_fscore_support, classification_report
 
-from magenta.models.polyamp.metrics import f1_score, accuracy_without_true_negatives
+from magenta.models.onsets_frames_transcription.metrics import f1_score, accuracy_without_true_negatives
 
 
 def _convert_to_multi_instrument_predictions(y_true, y_probs,
@@ -193,12 +193,10 @@ def multi_track_prf_wrapper(threshold=0.5, multiple_instruments_threshold=0.6,
         individual_sums = K.sum(K.cast(ignoring_melodic, 'int32'), 0)
 
         print(f'num_agnostic: '
-              f"""{K.sum(K.cast_to_floatx(get_last_channel(y_probs) > threshold
-                                          / hparams.prediction_generosity))}""")
+              f"""{K.sum(K.cast_to_floatx(get_last_channel(y_probs) > threshold))}""")
         print(f'true_num_agnostic: {K.sum(K.cast_to_floatx(get_last_channel(y_true) > 0))}')
         print(f'both: '
-              f"""{K.sum(K.cast_to_floatx(get_last_channel(y_probs) > threshold
-                                          / hparams.prediction_generosity)
+              f"""{K.sum(K.cast_to_floatx(get_last_channel(y_probs) > threshold)
                          * K.cast_to_floatx(get_last_channel(y_true) > 0))}""")
         print(f'total predicted {K.sum(individual_sums)}')
         if print_report:
@@ -316,7 +314,7 @@ def flatten_accuracy_wrapper():
 
 def calculate_frame_metrics(frame_labels, frame_predictions):
     # Copyright 2020 The Magenta Authors.
-    # Modifications by Jack Spencer Smith
+    # Modifications by Jack Spencer Smith.
     """Calculate frame-based metrics."""
     frame_labels_bool = tf.cast(frame_labels, tf.bool)
     frame_predictions_bool = tf.cast(frame_predictions, tf.bool)

@@ -137,17 +137,10 @@ def run(config_map, data_fn, additional_trial_info):
                               hparams=hparams
                               )
     elif FLAGS.mode == 'eval':
-        train_util.evaluate(
-            # model_fn=config.model_fn,
-            data_fn=data_fn,
-            additional_trial_info=additional_trial_info,
-            model_dir=model_dir,
-            model_type=model_util.ModelType[FLAGS.model_type],
-            name=FLAGS.eval_name,
-            preprocess_examples=FLAGS.preprocess_examples,
-            hparams=hparams,
-            num_steps=FLAGS.eval_num_steps,
-            note_based=FLAGS.note_based)
+        train_util.evaluate(data_fn=data_fn, model_dir=model_dir,
+                            model_type=model_util.ModelType[FLAGS.model_type],
+                            preprocess_examples=FLAGS.preprocess_examples, hparams=hparams,
+                            num_steps=FLAGS.eval_num_steps, note_based=FLAGS.note_based)
     else:
         raise ValueError('Unknown/unsupported mode: %s' % FLAGS.mode)
 
