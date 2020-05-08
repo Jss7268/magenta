@@ -12,12 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+# Lint as: python3
 """Trains the N-styles style transfer model."""
-
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
-
 import ast
 import os
 
@@ -25,7 +21,7 @@ from magenta.models.image_stylization import image_utils
 from magenta.models.image_stylization import learning
 from magenta.models.image_stylization import model
 from magenta.models.image_stylization import vgg
-import tensorflow as tf
+import tensorflow.compat.v1 as tf
 from tensorflow.contrib import slim as contrib_slim
 
 slim = contrib_slim

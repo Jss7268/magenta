@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+# Lint as: python3
 """Common functions/helpers for dataspace model.
 
 This library contains many common functions and helpers used to for the
@@ -32,9 +33,6 @@ These components are classified in the following categories:
         `get_default_scratch`, `ObjectBlob`,
 
 """
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
 
 import functools
 import importlib
@@ -43,7 +41,7 @@ import os
 from magenta.models.latent_transfer import local_mnist
 import numpy as np
 from PIL import Image
-import tensorflow as tf
+import tensorflow.compat.v1 as tf
 
 FLAGS = tf.flags.FLAGS
 

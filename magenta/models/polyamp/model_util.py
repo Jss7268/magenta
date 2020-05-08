@@ -313,9 +313,9 @@ class ModelWrapper:
 
     def predict_from_spec(self, spec=None, num_croppings=None,
                           additional_spec=None, qpm=None, *args):
-        if self.type == ModelType.MELODIC:
+        if self.type is ModelType.MELODIC:
             return self._predict_sequence(spec, qpm=qpm)
-        elif self.type == ModelType.TIMBRE:
+        elif self.type is ModelType.TIMBRE:
             return self._predict_timbre(spec, num_croppings)
         else:
             return self.predict_multi_sequence(melodic_spec=spec, timbre_spec=additional_spec)

@@ -90,7 +90,8 @@ def run(argv, config_map):
         model_wrapper.build_model(melodic_model=melodic_model_wrapper.get_model(),
                                   timbre_model=timbre_model_wrapper.get_model(), compile_=False)
         model_wrapper.load_newest()
-        melodic_model_wrapper.load_newest()
+        if not FLAGS.load_full:
+            melodic_model_wrapper.load_newest()
     else:
         model_wrapper.build_model(compile_=False)
         if FLAGS.load_full:

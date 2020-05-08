@@ -19,7 +19,8 @@ from tensorflow.keras.layers import *
 from tensorflow.keras.models import Model
 
 from magenta.models.polyamp import constants, sequence_prediction_util
-from magenta.models.polyamp.accuracy_util import multi_track_present_accuracy_wrapper, multi_track_prf_wrapper, \
+from magenta.models.polyamp.accuracy_util import multi_track_present_accuracy_wrapper, \
+    multi_track_prf_wrapper, \
     single_track_present_accuracy_wrapper
 from magenta.models.polyamp.loss_util import full_model_loss_wrapper
 from magenta.models.polyamp.layer_util import NoteCroppingsToPianorolls
@@ -78,12 +79,13 @@ class FullModel:
             frame_predictions = batched_frame_predictions[batch_idx]
             onset_predictions = batched_onset_predictions[batch_idx]
             offset_predictions = batched_offset_predictions[batch_idx]
-            sequence = sequence_prediction_util.predict_sequence(frame_predictions=frame_predictions,
-                                                                 onset_predictions=onset_predictions,
-                                                                 offset_predictions=offset_predictions,
-                                                                 velocity_values=None,
-                                                                 min_pitch=constants.MIN_MIDI_PITCH,
-                                                                 hparams=self.hparams)
+            sequence = sequence_prediction_util.predict_sequence(
+                frame_predictions=frame_predictions,
+                onset_predictions=onset_predictions,
+                offset_predictions=offset_predictions,
+                velocity_values=None,
+                min_pitch=constants.MIN_MIDI_PITCH,
+                hparams=self.hparams)
             croppings_list.append(self.sequence_to_note_croppings(sequence))
 
         padded = tf.keras.preprocessing.sequence.pad_sequences(croppings_list,

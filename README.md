@@ -37,8 +37,8 @@ This and more, including [blog posts](https://magenta.tensorflow.org/blog) and [
 
 Magenta maintains a [pip package](https://pypi.python.org/pypi/magenta) for easy
 installation. We recommend using Anaconda to install it, but it can work in any
-standard Python environment. We support both Python 2 (>= 2.7) and Python 3 (>= 3.5).
-These instructions will assume you are using Anaconda.
+standard Python environment. We support Python 3 (>= 3.5). These instructions
+will assume you are using Anaconda.
 
 ### Automated Install (w/ Anaconda)
 
@@ -70,11 +70,17 @@ Install the Magenta pip package:
 pip install magenta
 ```
 
-**NOTE**: In order to install the `rtmidi` package that we depend on, you may need to install headers for some sound libraries. On Linux, this command should install the necessary packages:
+**NOTE**: In order to install the `rtmidi` package that we depend on, you may need to install headers for some sound libraries. On Ubuntu Linux, this command should install the necessary packages:
 
 ```bash
 sudo apt-get install build-essential libasound2-dev libjack-dev portaudio19-dev
 ```
+On Fedora Linux, use
+```bash
+sudo dnf group install "C Development Tools and Libraries"
+sudo dnf install SAASound-devel jack-audio-connection-kit-devel portaudio-devel
+```
+
 
 The Magenta libraries are now available for use within Python programs and
 Jupyter notebooks, and the Magenta scripts are installed in your path!

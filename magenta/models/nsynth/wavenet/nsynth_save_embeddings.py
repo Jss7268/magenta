@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+# Lint as: python3
 """With a trained model, compute the embeddings on a directory of WAV files."""
 
 import os
@@ -20,7 +21,6 @@ import sys
 from magenta.models.nsynth import utils
 from magenta.models.nsynth.wavenet.fastgen import encode
 import numpy as np
-from six.moves import xrange  # pylint: disable=redefined-builtin
 import tensorflow.compat.v1 as tf
 
 FLAGS = tf.app.flags.FLAGS
@@ -86,7 +86,7 @@ def main(unused_argv=None):
       for fname in tf.gfile.ListDirectory(source_path) if is_wav(fname)
   ])
 
-  for start_file in xrange(0, len(wavfiles), batch_size):
+  for start_file in range(0, len(wavfiles), batch_size):
     batch_number = (start_file / batch_size) + 1
     tf.logging.info("On file number %s (batch %d).", start_file, batch_number)
     end_file = start_file + batch_size

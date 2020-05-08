@@ -67,6 +67,8 @@ DEFAULT_HPARAMS = {
         'jitter_amount_ms': 0,
         'min_duration_ms': 0,
         'backward_shift_amount_ms': 0,
+        'velocity_scale': 80.0,
+        'velocity_bias': 10.0,
     }}
 
 CONFIG_MAP = {}

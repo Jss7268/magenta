@@ -12,7 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+# Lint as: python3
 """Generate melodies from a trained checkpoint of an improv RNN model."""
+
+from __future__ import absolute_import
+from __future__ import division
+from __future__ import print_function
 
 import ast
 import os
@@ -26,7 +31,7 @@ from magenta.models.shared import sequence_generator
 from magenta.models.shared import sequence_generator_bundle
 from magenta.music.protobuf import generator_pb2
 from magenta.music.protobuf import music_pb2
-import tensorflow as tf
+import tensorflow.compat.v1 as tf
 
 CHORD_SYMBOL = music_pb2.NoteSequence.TextAnnotation.CHORD_SYMBOL
 

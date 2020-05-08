@@ -12,11 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+# Lint as: python3
 """Evaluates the N-styles style transfer model."""
-
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
 
 import ast
 import os
@@ -24,7 +21,7 @@ import os
 from magenta.models.image_stylization import image_utils
 from magenta.models.image_stylization import learning
 from magenta.models.image_stylization import model
-import tensorflow as tf
+import tensorflow.compat.v1 as tf
 from tensorflow.contrib import slim as contrib_slim
 
 slim = contrib_slim
@@ -182,7 +179,7 @@ def main(_):
         summary_op = tf.summary.scalar(name, value, [])
         print_op = tf.Print(summary_op, [value], name)
         tf.add_to_collection(tf.GraphKeys.SUMMARIES, print_op)
-      eval_op = names_updates.values()
+      eval_op = list(names_updates.values())
       num_evals = FLAGS.num_evals
     else:
       eval_op = None
