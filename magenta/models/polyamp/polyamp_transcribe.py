@@ -80,31 +80,27 @@ def run(argv, config_map):
                                  hparams=hparams)
 
     if model_type is model_util.ModelType.FULL:
-        midi_model_wrapper = ModelWrapper(FLAGS.model_dir, ModelType.MELODIC, hparams=hparams)
-        midi_model_wrapper.build_model(compile=False)
-        midi_model_wrapper.load_newest()
+        melodic_model_wrapper = ModelWrapper(FLAGS.model_dir, ModelType.MELODIC, hparams=hparams)
+        melodic_model_wrapper.build_model(compile_=False)
+        melodic_model_wrapper.load_newest()
         timbre_model_wrapper = ModelWrapper(FLAGS.model_dir, ModelType.TIMBRE, hparams=hparams)
-        timbre_model_wrapper.build_model(compile=False)
+        timbre_model_wrapper.build_model(compile_=False)
         timbre_model_wrapper.load_newest()
 
-        model_wrapper.build_model(midi_model=midi_model_wrapper.get_model(),
-                                  timbre_model=timbre_model_wrapper.get_model(),
-                                  compile=False)
+        model_wrapper.build_model(melodic_model=melodic_model_wrapper.get_model(),
+                                  timbre_model=timbre_model_wrapper.get_model(), compile_=False)
         model_wrapper.load_newest()
-        midi_model_wrapper.load_newest()
+        melodic_model_wrapper.load_newest()
     else:
-        model_wrapper.build_model(compile=False)
+        model_wrapper.build_model(compile_=False)
         if FLAGS.load_full:
             full_model_wrapper = ModelWrapper(FLAGS.model_dir, ModelType.FULL, hparams=hparams)
-            full_model_wrapper.build_model(
-                compile=False,
-                midi_model=(model_wrapper.get_model()
-                            if model_type is model_util.ModelType.MELODIC
-                            else None),
-                timbre_model=(model_wrapper.get_model()
-                              if model_type is model_util.ModelType.TIMBRE
-                              else None)
-            )
+            full_model_wrapper.build_model(melodic_model=(model_wrapper.get_model()
+                                                          if model_type is model_util.ModelType.MELODIC
+                                                          else None),
+                                           timbre_model=(model_wrapper.get_model()
+                                                         if model_type is model_util.ModelType.TIMBRE
+                                                         else None), compile_=False)
             full_model_wrapper.load_newest()
         else:
             model_wrapper.load_newest()

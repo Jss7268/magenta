@@ -17,9 +17,9 @@ import math
 
 from dotmap import DotMap
 from tensorflow.keras import backend as K
-from tensorflow.keras.layers import Bidirectional, Conv1D, Conv2D, ConvLSTM2D, Dense, Dropout, ELU, \
-    Flatten, GlobalMaxPooling1D, Input, Lambda, MaxPooling1D, Reshape, SpatialDropout2D, \
-    TimeDistributed, concatenate
+from tensorflow.keras.layers import Bidirectional, Conv1D, Conv2D, ConvLSTM2D, Dense, Dropout, \
+    ELU, Flatten, GlobalMaxPooling1D, Input, Lambda, MaxPooling1D, Reshape, SpatialDropout2D, \
+    TimeDistributed
 from tensorflow.keras.models import Model
 from tensorflow.keras.regularizers import l2
 
@@ -68,207 +68,204 @@ def get_default_hparams():
     }
 
 
-def acoustic_model_layer(hparams):
-    num_filters = 128
+class TimbreModel:
+    def __init__(self, hparams):
+        if hparams is None:
+            hparams = DotMap(get_default_hparams())
+        self.hparams = hparams
 
-    def acoustic_model_fn(inputs):
-        outputs = inputs
+    def acoustic_model_layer(self):
+        num_filters = 128
 
-        for i in range(hparams.timbre_conv_num_layers):
-            outputs = conv_elu_pool_layer(num_filters, 3, 3, hparams.timbre_pool_size[i],
-                                          activation_fn=ELU(hparams.timbre_leaky_alpha))(outputs)
-            if hparams.timbre_spatial_dropout:
-                outputs = SpatialDropout2D(hparams.timbre_dropout_drop_amts[i])(outputs)
-            else:
-                outputs = Dropout(hparams.timbre_dropout_drop_amts[i])(outputs)
+        def acoustic_model_fn(inputs):
+            outputs = inputs
 
-        return outputs
-
-    return acoustic_model_fn
-
-
-def parallel_filters_layer(hparams):
-    # Don't pool yet so we have more cropping accuracy.
-    pool_size = (1, 1)
-
-    def filters_layer_fn(inputs):
-        parallel_layers = []
-        for f_i in hparams.timbre_filter_frequency_sizes:
-            for i, t_i in enumerate(hparams.timbre_filter_temporal_sizes):
-                outputs = conv_elu_pool_layer(hparams.timbre_num_filters[i], t_i, f_i, pool_size,
-                                              activation_fn=ELU(hparams.timbre_leaky_alpha))(inputs)
-                if hparams.timbre_spatial_dropout:
-                    outputs = SpatialDropout2D(hparams.timbre_conv_drop_amt)(outputs)
+            for i in range(self.hparams.timbre_conv_num_layers):
+                outputs = conv_elu_pool_layer(
+                    num_filters, 3, 3, self.hparams.timbre_pool_size[i],
+                    activation_fn=ELU(self.hparams.timbre_leaky_alpha))(outputs)
+                if self.hparams.timbre_spatial_dropout:
+                    outputs = SpatialDropout2D(self.hparams.timbre_dropout_drop_amts[i])(outputs)
                 else:
-                    outputs = Dropout(hparams.timbre_conv_drop_amt)(outputs)
-                parallel_layers.append(outputs)
-        return concatenate(parallel_layers, axis=-1)
+                    outputs = Dropout(self.hparams.timbre_dropout_drop_amts[i])(outputs)
 
-    return filters_layer_fn
+            return outputs
 
+        return acoustic_model_fn
 
-def local_conv_layer(hparams):
-    size = hparams.timbre_local_conv_size
-    strides = hparams.timbre_local_conv_strides
+    def parallel_filters_layer(self):
+        # Don't pool yet so we have more cropping accuracy.
+        pool_size = (1, 1)
 
-    def local_conv_fn(inputs):
-        outputs = ELU(hparams.timbre_leaky_alpha)(
-            TimeDistributed(Conv1D(
-                hparams.timbre_local_conv_num_filters,
-                size,
-                strides,
-                padding='same',
-                use_bias=False,
-            ), name=f'roi_conv1d_{size}_{strides}')(inputs))
+        def filters_layer_fn(inputs):
+            parallel_layers = []
+            for f_i in self.hparams.timbre_filter_frequency_sizes:
+                for i, t_i in enumerate(self.hparams.timbre_filter_temporal_sizes):
+                    outputs = conv_elu_pool_layer(self.hparams.timbre_num_filters[i], t_i, f_i,
+                                                  pool_size,
+                                                  activation_fn=ELU(
+                                                      self.hparams.timbre_leaky_alpha))(inputs)
+                    if self.hparams.timbre_spatial_dropout:
+                        outputs = SpatialDropout2D(self.hparams.timbre_conv_drop_amt)(outputs)
+                    else:
+                        outputs = Dropout(self.hparams.timbre_conv_drop_amt)(outputs)
+                    parallel_layers.append(outputs)
+            return K.concatenate(parallel_layers, axis=-1)
 
-        outputs = TimeDistributed(GlobalMaxPooling1D(), name='global_max_pitch')(outputs)
+        return filters_layer_fn
 
-        return outputs
+    def local_conv_layer(self):
+        size = self.hparams.timbre_local_conv_size
+        strides = self.hparams.timbre_local_conv_strides
 
-    return local_conv_fn
+        def local_conv_fn(inputs):
+            outputs = ELU(self.hparams.timbre_leaky_alpha)(
+                TimeDistributed(Conv1D(
+                    self.hparams.timbre_local_conv_num_filters,
+                    size,
+                    strides,
+                    padding='same',
+                    use_bias=False,
+                ), name=f'roi_conv1d_{size}_{strides}')(inputs))
 
+            outputs = TimeDistributed(GlobalMaxPooling1D(), name='global_max_pitch')(outputs)
 
-def acoustic_dense_layer(hparams):
-    def acoustic_dense_fn(inputs):
-        outputs = inputs
-        for i in range(hparams.timbre_fc_num_layers):
-            outputs = TimeDistributed(Dense(hparams.timbre_fc_size,
-                                            kernel_initializer='he_uniform',
-                                            bias_regularizer=l2(1e-1),
+            return outputs
+
+        return local_conv_fn
+
+    def acoustic_dense_layer(self):
+        def acoustic_dense_fn(inputs):
+            outputs = inputs
+            for i in range(self.hparams.timbre_fc_num_layers):
+                outputs = TimeDistributed(Dense(self.hparams.timbre_fc_size,
+                                                kernel_initializer='he_uniform',
+                                                bias_regularizer=l2(1e-1),
+                                                use_bias=False,
+                                                activation='sigmoid',
+                                                name=f'acoustic_dense_{i}'))(outputs)
+                # Don't do batch normalization because our samples
+                # are no longer independent.
+                outputs = Dropout(self.hparams.timbre_fc_dropout_drop_amt)(outputs)
+
+            penultimate_outputs = TimeDistributed(
+                Dense(self.hparams.timbre_penultimate_fc_size,
+                      use_bias=True,  # bias so that low bass notes can be predicted
+                      bias_regularizer=l2(self.hparams.timbre_l2_regularizer),
+                      activation=self.hparams.timbre_penultimate_activation,
+                      kernel_initializer='he_uniform'),
+                name=f'penultimate_dense_{self.hparams.timbre_local_conv_num_filters}')(outputs)
+            return penultimate_outputs
+
+        return acoustic_dense_fn
+
+    def instrument_prediction_layer(self):
+        def instrument_prediction_fn(inputs):
+            outputs = inputs
+            outputs = TimeDistributed(Dense(self.hparams.timbre_num_classes,
+                                            activation=self.hparams.timbre_final_activation,
                                             use_bias=False,
-                                            activation='sigmoid',
-                                            name=f'acoustic_dense_{i}'))(outputs)
-            # Don't do batch normalization because our samples
-            # are no longer independent.
-            outputs = Dropout(hparams.timbre_fc_dropout_drop_amt)(outputs)
+                                            kernel_initializer='he_uniform'),
+                                      name='timbre_prediction')(outputs)
+            return outputs
 
-        penultimate_outputs = TimeDistributed(
-            Dense(hparams.timbre_penultimate_fc_size,
-                  use_bias=True,  # bias so that low bass notes can be predicted
-                  bias_regularizer=l2(hparams.timbre_l2_regularizer),
-                  activation=hparams.timbre_penultimate_activation,
-                  kernel_initializer='he_uniform'),
-            name=f'penultimate_dense_{hparams.timbre_local_conv_num_filters}')(outputs)
-        return penultimate_outputs
+        return instrument_prediction_fn
 
-    return acoustic_dense_fn
+    def get_timbre_model(self):
+        """Build the Timbre Model architecture."""
 
+        spec = Input(shape=self.hparams.timbre_input_shape, name='spec')
 
-def instrument_prediction_layer(hparams):
-    def instrument_prediction_fn(inputs):
-        outputs = inputs
-        outputs = TimeDistributed(Dense(hparams.timbre_num_classes,
-                                        activation=hparams.timbre_final_activation,
-                                        use_bias=False,
-                                        kernel_initializer='he_uniform'),
-                                  name='timbre_prediction')(outputs)
-        return outputs
+        # batched dimensions for cropping like:
+        # ((top_crop, bottom_crop), (left_crop, right_crop))
+        # with a high pass, top_crop will always be 0, bottom crop is relative to pitch
+        note_croppings = Input(shape=(None, 3),
+                               name='note_croppings', dtype='int64')
 
-    return instrument_prediction_fn
+        spec_with_epsilon = Lambda(lambda x: x + self.hparams.timbre_spec_epsilon)(spec)
+        # Acoustic_outputs shape: (None, None, 57, 128).
+        # aka: (batch_size, length, freq_range, num_channels)
+        acoustic_outputs = self.acoustic_model_layer()(spec_with_epsilon)
+        # Filter_outputs shape: (None, None, 57, 448).
+        # aka: (batch_size, length, freq_range, num_channels)
+        filter_outputs = self.parallel_filters_layer()(acoustic_outputs)
+        # Simplify to save memory.
+        if self.hparams.timbre_bottleneck_filter_num:
+            filter_outputs = Conv2D(self.hparams.timbre_bottleneck_filter_num, (1, 1),
+                                    activation='relu')(
+                filter_outputs)
+        if self.hparams.timbre_rnn_stack_size > 0:
+            # Run TimeDistributed LSTM, distributing over pitch.
+            # lstm_input = Permute((2, 1, 3))(filter_outputs)
+            lstm_input = Lambda(lambda x: K.expand_dims(x, -2))(filter_outputs)
+            lstm_outputs = Bidirectional(ConvLSTM2D(
+                self.hparams.timbre_lstm_units,
+                kernel_size=(5, 1),
+                padding='same',
+                return_sequences=True,
+                dropout=self.hparams.timbre_rnn_dropout_drop_amt[0],
+                recurrent_dropout=self.hparams.timbre_rnn_dropout_drop_amt[1],
+                kernel_initializer='he_uniform'))(lstm_input)
+            # Reshape "does not include batch axis".
+            reshaped_outputs = Reshape((-1,
+                                        K.int_shape(lstm_outputs)[2] * K.int_shape(lstm_outputs)[3],
+                                        K.int_shape(lstm_outputs)[4]))(lstm_outputs)
+        else:
+            reshaped_outputs = filter_outputs
+        # batch_size is excluded from this shape as it gets automatically inferred.
+        # output_shape: (batch_size, num_notes, freq_range, num_filters)
+        output_shape = (
+            None,
+            math.ceil(K.int_shape(reshaped_outputs)[2]),
+            K.int_shape(reshaped_outputs)[3]
+        )
+        pooled_outputs = Lambda(
+            functools.partial(get_all_croppings, hparams=self.hparams), dynamic=True,
+            output_shape=output_shape)(
+            [reshaped_outputs, note_croppings])
 
+        # We now need to use TimeDistributed because we have 5 dimensions,
+        # and want to operate on thelast 3 independently:
+        # (time, frequency, and number of channels/filters).
+        pooled_outputs = TimeDistributed(
+            MaxPooling1D(pool_size=(self.hparams.timbre_filters_pool_size[1],),
+                         padding='same'),
+            name='post_crop_pool')(pooled_outputs)
 
-def get_timbre_model(hparams=None):
-    """Build the Timbre Model architecture."""
-    if hparams is None:
-        hparams = DotMap(get_default_hparams())
+        if self.hparams.timbre_local_conv_num_filters:
+            pooled_outputs = self.local_conv_layer()(pooled_outputs)
+        # Flatten while preserving batch and time dimensions.
+        flattened_outputs = TimeDistributed(Flatten(), name='flatten')(
+            pooled_outputs)
+        penultimate_outputs = self.acoustic_dense_layer()(flattened_outputs)
+        # shape: (None, None, 11)
+        # aka: (batch_size, num_notes, num_classes)
+        instrument_family_probs = self.instrument_prediction_layer()(penultimate_outputs)
 
-    input_shape = (
-        hparams.timbre_input_shape[0], hparams.timbre_input_shape[1],
-        hparams.timbre_input_shape[2],)
+        # Remove padded predictions.
+        def remove_padded(input_list):
+            probs, croppings = input_list
+            end_indices = K.expand_dims(K.permute_dimensions(croppings, (2, 0, 1))[-1], -1)
+            # Remove negative end_indices.
+            return probs * K.cast_to_floatx(end_indices >= 0)
 
-    spec = Input(shape=input_shape,
-                 name='spec')
+        instrument_family_probs = Lambda(remove_padded, name='family_probs')(
+            [instrument_family_probs, note_croppings])
 
-    # batched dimensions for cropping like:
-    # ((top_crop, bottom_crop), (left_crop, right_crop))
-    # with a high pass, top_crop will always be 0, bottom crop is relative to pitch
-    note_croppings = Input(shape=(None, 3),
-                           name='note_croppings', dtype='int64')
+        if self.hparams.timbre_final_activation == 'sigmoid':
+            # This is the only supported option.
+            losses = {'family_probs': timbre_loss_wrapper(hparams=self.hparams, recall_weighing=4.)}
 
-    spec_with_epsilon = Lambda(lambda x: x + hparams.timbre_spec_epsilon)(spec)
-    # Acoustic_outputs shape: (None, None, 57, 128).
-    # aka: (batch_size, length, freq_range, num_channels)
-    acoustic_outputs = acoustic_model_layer(hparams)(spec_with_epsilon)
-    # Filter_outputs shape: (None, None, 57, 448).
-    # aka: (batch_size, length, freq_range, num_channels)
-    filter_outputs = parallel_filters_layer(hparams)(acoustic_outputs)
-    # Simplify to save memory.
-    if hparams.timbre_bottleneck_filter_num:
-        filter_outputs = Conv2D(hparams.timbre_bottleneck_filter_num, (1, 1),
-                                activation='relu')(
-            filter_outputs)
-    if hparams.timbre_rnn_stack_size > 0:
-        # Run TimeDistributed LSTM, distributing over pitch.
-        # lstm_input = Permute((2, 1, 3))(filter_outputs)
-        lstm_input = Lambda(lambda x: K.expand_dims(x, -2))(filter_outputs)
-        lstm_outputs = Bidirectional(ConvLSTM2D(
-            hparams.timbre_lstm_units,
-            kernel_size=(5, 1),
-            padding='same',
-            return_sequences=True,
-            dropout=hparams.timbre_rnn_dropout_drop_amt[0],
-            recurrent_dropout=hparams.timbre_rnn_dropout_drop_amt[1],
-            kernel_initializer='he_uniform'))(lstm_input)
-        # Reshape "does not include batch axis".
-        reshaped_outputs = Reshape((-1,
-                                    K.int_shape(lstm_outputs)[2] * K.int_shape(lstm_outputs)[3],
-                                    K.int_shape(lstm_outputs)[4]))(lstm_outputs)
-    else:
-        reshaped_outputs = filter_outputs
-    # batch_size is excluded from this shape as it gets automatically inferred.
-    # output_shape: (batch_size, num_notes, freq_range, num_filters)
-    output_shape = (
-        None,
-        math.ceil(K.int_shape(reshaped_outputs)[2]),
-        K.int_shape(reshaped_outputs)[3]
-    )
-    pooled_outputs = Lambda(
-        functools.partial(get_all_croppings, hparams=hparams), dynamic=True,
-        output_shape=output_shape)(
-        [reshaped_outputs, note_croppings])
+        elif self.hparams.timbre_final_activation == 'softmax':
+            # TODO use multi-class labelling loss function.
+            losses = {'family_probs': timbre_loss_wrapper(hparams=self.hparams, recall_weighing=4.)}
 
-    # We now need to use TimeDistributed because we have 5 dimensions,
-    # and want to operate on thelast 3 independently:
-    # (time, frequency, and number of channels/filters).
-    pooled_outputs = TimeDistributed(
-        MaxPooling1D(pool_size=(hparams.timbre_filters_pool_size[1],),
-                     padding='same'),
-        name='post_crop_pool')(pooled_outputs)
+        else:
+            # TODO use logit loss function.
+            losses = {'family_probs': timbre_loss_wrapper(hparams=self.hparams, recall_weighing=4.)}
 
-    if hparams.timbre_local_conv_num_filters:
-        pooled_outputs = local_conv_layer(hparams)(pooled_outputs)
-    # Flatten while preserving batch and time dimensions.
-    flattened_outputs = TimeDistributed(Flatten(), name='flatten')(
-        pooled_outputs)
-    penultimate_outputs = acoustic_dense_layer(hparams)(flattened_outputs)
-    # shape: (None, None, 11)
-    # aka: (batch_size, num_notes, num_classes)
-    instrument_family_probs = instrument_prediction_layer(hparams)(penultimate_outputs)
+        accuracies = {'family_probs': [flatten_accuracy_wrapper(),
+                                       lambda *x: flatten_f1_wrapper()(*x)['f1_score']]}
 
-    # Remove padded predictions.
-    def remove_padded(input_list):
-        probs, croppings = input_list
-        end_indices = K.expand_dims(K.permute_dimensions(croppings, (2, 0, 1))[-1], -1)
-        # Remove negative end_indices.
-        return probs * K.cast_to_floatx(end_indices >= 0)
-
-    instrument_family_probs = Lambda(remove_padded, name='family_probs')(
-        [instrument_family_probs, note_croppings])
-
-    if hparams.timbre_final_activation == 'sigmoid':
-        # This is the only supported option.
-        losses = {'family_probs': timbre_loss_wrapper(hparams=hparams, recall_weighing=4.)}
-
-    elif hparams.timbre_final_activation == 'softmax':
-        # TODO use multi-class labelling loss function.
-        losses = {'family_probs': timbre_loss_wrapper(hparams=hparams, recall_weighing=4.)}
-
-    else:
-        # TODO use logit loss function.
-        losses = {'family_probs': timbre_loss_wrapper(hparams=hparams, recall_weighing=4.)}
-
-    accuracies = {'family_probs': [flatten_accuracy_wrapper(),
-                                   lambda *x: flatten_f1_wrapper()(*x)['f1_score']]}
-
-    return Model(inputs=[spec, note_croppings],
-                 outputs=instrument_family_probs), losses, accuracies
+        return Model(inputs=[spec, note_croppings],
+                     outputs=instrument_family_probs), losses, accuracies

@@ -18,7 +18,8 @@ import tensorflow.keras.backend as K
 from tensorflow.keras.metrics import categorical_accuracy
 from sklearn.metrics import precision_recall_fscore_support, classification_report
 
-from magenta.models.onsets_frames_transcription.metrics import f1_score, accuracy_without_true_negatives
+from magenta.models.onsets_frames_transcription.metrics import f1_score, \
+    accuracy_without_true_negatives
 
 
 def _convert_to_multi_instrument_predictions(y_true, y_probs,
@@ -193,11 +194,11 @@ def multi_track_prf_wrapper(threshold=0.5, multiple_instruments_threshold=0.6,
         individual_sums = K.sum(K.cast(ignoring_melodic, 'int32'), 0)
 
         print(f'num_agnostic: '
-              f"""{K.sum(K.cast_to_floatx(get_last_channel(y_probs) > threshold))}""")
+              f'{K.sum(K.cast_to_floatx(get_last_channel(y_probs) > threshold))}')
         print(f'true_num_agnostic: {K.sum(K.cast_to_floatx(get_last_channel(y_true) > 0))}')
         print(f'both: '
               f"""{K.sum(K.cast_to_floatx(get_last_channel(y_probs) > threshold)
-                         * K.cast_to_floatx(get_last_channel(y_true) > 0))}""")
+                     * K.cast_to_floatx(get_last_channel(y_true) > 0))}""")
         print(f'total predicted {K.sum(individual_sums)}')
         if print_report:
             print(classification_report(flat_y_true, ignoring_melodic,

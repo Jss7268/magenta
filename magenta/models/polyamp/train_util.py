@@ -26,7 +26,7 @@ import tensorflow.keras.backend as K
 
 from magenta.models.polyamp import constants
 from magenta.models.polyamp.callback import EvaluationMetrics, \
-    MidiPredictionMetrics
+    MelodicPredictionMetrics
 from magenta.models.polyamp.data_generator import DataGenerator
 from magenta.models.polyamp.dataset_reader import wav_to_spec_op
 from magenta.models.polyamp.model_util import ModelType, ModelWrapper
@@ -50,7 +50,7 @@ def train(data_fn,
         skip_n_initial_records=random.randint(0, 128))
 
     model_wrapper = ModelWrapper(model_dir, model_type, id_=hparams.model_id,
-                                 dataset=transcription_data(params=hparams),
+                                 dataset=transcription_data(hparams=hparams),
                                  batch_size=hparams.batch_size,
                                  steps_per_epoch=hparams.epochs_per_save,
                                  hparams=hparams)
@@ -64,13 +64,13 @@ def train(data_fn,
     else:
         print('building full model')
         melodic_model_wrapper = ModelWrapper(model_dir, ModelType.MELODIC, hparams=hparams)
-        melodic_model_wrapper.build_model(compile=False)
+        melodic_model_wrapper.build_model(compile_=False)
         melodic_model_wrapper.load_newest()
         timbre_model_wrapper = ModelWrapper(model_dir, ModelType.TIMBRE, hparams=hparams)
-        timbre_model_wrapper.build_model(compile=False)
+        timbre_model_wrapper.build_model(compile_=False)
         timbre_model_wrapper.load_newest()
 
-        model_wrapper.build_model(midi_model=melodic_model_wrapper.get_model(),
+        model_wrapper.build_model(melodic_model=melodic_model_wrapper.get_model(),
                                   timbre_model=timbre_model_wrapper.get_model())
 
         model_wrapper.load_newest(hparams.load_id)
@@ -90,7 +90,7 @@ def transcribe(data_fn,
                                      is_training=False,
                                      shuffle_examples=True,
                                      skip_n_initial_records=0,
-                                     params=hparams)
+                                     hparams=hparams)
     else:
         transcription_data = None
 
@@ -98,13 +98,13 @@ def transcribe(data_fn,
         melodic_model_wrapper = ModelWrapper(model_dir, ModelType.MELODIC,
                                              dataset=transcription_data,
                                              batch_size=1, id_=hparams.model_id, hparams=hparams)
-        melodic_model_wrapper.build_model(compile=False)
+        melodic_model_wrapper.build_model(compile_=False)
         melodic_model_wrapper.load_newest(hparams.load_id)
     elif model_type == ModelType.TIMBRE:
         timbre_model_wrapper = ModelWrapper(model_dir, ModelType.TIMBRE, id_=hparams.model_id,
                                             dataset=transcription_data, batch_size=1,
                                             hparams=hparams)
-        timbre_model_wrapper.build_model(compile=False)
+        timbre_model_wrapper.build_model(compile_=False)
         timbre_model_wrapper.load_newest(hparams.load_id)
 
     if data_fn:
@@ -162,42 +162,39 @@ def evaluate(data_fn, model_dir, model_type, preprocess_examples, hparams, num_s
         shuffle_examples=False, skip_n_initial_records=0)
 
     model_wrapper = ModelWrapper(model_dir, ModelType.FULL,
-                                 dataset=transcription_data(params=hparams),
+                                 dataset=transcription_data(hparams=hparams),
                                  batch_size=hparams.batch_size,
                                  steps_per_epoch=hparams.epochs_per_save,
                                  hparams=hparams)
     if model_type is ModelType.TIMBRE:
         timbre_model = ModelWrapper(model_dir, ModelType.TIMBRE, hparams=hparams)
-        timbre_model.build_model(compile=False)
-        model_wrapper.build_model(compile=False, timbre_model=timbre_model.get_model())
+        timbre_model.build_model(compile_=False)
+        model_wrapper.build_model(timbre_model=timbre_model.get_model(), compile_=False)
         model_wrapper.load_newest(hparams.load_id)
         model_wrapper = timbre_model
     elif model_type is ModelType.MELODIC:
-        midi_model = ModelWrapper(model_dir, ModelType.MELODIC, hparams=hparams, batch_size=1)
-        midi_model.build_model(compile=False)
-        model_wrapper.build_model(compile=False, midi_model=midi_model.get_model())
-        midi_model.load_newest(hparams.load_id)
-        model_wrapper = midi_model
+        melodic_model = ModelWrapper(model_dir, ModelType.MELODIC, hparams=hparams, batch_size=1)
+        melodic_model.build_model(compile_=False)
+        model_wrapper.build_model(melodic_model=melodic_model.get_model(), compile_=False)
+        melodic_model.load_newest(hparams.load_id)
+        model_wrapper = melodic_model
     else:
-        model_wrapper.build_model(compile=False)
+        model_wrapper.build_model(compile_=False)
         model_wrapper.load_newest(hparams.load_id)
 
-    generator = DataGenerator(transcription_data(params=hparams), hparams.batch_size,
+    generator = DataGenerator(transcription_data(hparams=hparams), hparams.batch_size,
                               use_numpy=False)
     save_dir = f'{model_dir}/{model_type.name}/{model_wrapper.id}_eval'
 
     if model_type is ModelType.MELODIC:
-        metrics = MidiPredictionMetrics(generator=generator, note_based=note_based,
-                                        hparams=hparams, save_dir=save_dir)
+        metrics = MelodicPredictionMetrics(generator=generator, note_based=note_based,
+                                           hparams=hparams, save_dir=save_dir)
     else:
         metrics = EvaluationMetrics(generator=generator, hparams=hparams, save_dir=save_dir,
                                     is_full=model_type is ModelType.FULL)
-    try:
-        for i in range(num_steps):
-            print(f'evaluating step: {i}')
-            metrics.on_epoch_end(i, model=model_wrapper.get_model())
-    except:
-        pass
+    for i in range(num_steps):
+        print(f'evaluating step: {i}')
+        metrics.on_epoch_end(i, model=model_wrapper.get_model())
 
     metric_names = ['true_positives', 'false_positives', 'false_negatives']
 

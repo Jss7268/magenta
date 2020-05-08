@@ -45,6 +45,7 @@ DEFAULT_HPARAMS = {
         'timbre_max_start_offset': 160000,  # 10 seconds
         'timbre_min_len': 8000,
         'timbre_max_len': 0,
+        'timbre_num_classes': constants.NUM_INSTRUMENT_FAMILIES + 1,
         'sample_rate': 16000,
         'spec_type': 'cqt',
         'spec_mel_htk': True,

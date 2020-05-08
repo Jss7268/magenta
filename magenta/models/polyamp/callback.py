@@ -28,8 +28,8 @@ from magenta.models.polyamp.accuracy_util import \
 from magenta.models.onsets_frames_transcription.metrics import calculate_metrics
 from magenta.music import midi_io
 
-MidiPredictionOutputMetrics = (
-    collections.namedtuple('MidiPredictionOutputMetrics',
+MelodicPredictionOutputMetrics = (
+    collections.namedtuple('MelodicPredictionOutputMetrics',
                            ('frames', 'onsets', 'offsets'))
 )
 TimbrePredictionOutputMetrics = (
@@ -119,13 +119,12 @@ class MetricsCallback(Callback):
         try:
             metrics = self.predict(x, y, epoch=epoch)
         except Exception as e:
-            print(e)
-            return
+            raise e
         if type(metrics) is dict:
             metrics_dict = metrics
         else:
             metrics_dict = metrics._asdict()
-        self.metrics_history.append(metrics_dict)
+        self.metrics_history.append(metrics)
         try:
             for name, value in metrics_dict.items():
                 print('{} metrics:'.format(name))
@@ -140,9 +139,9 @@ class MetricsCallback(Callback):
         gc.collect()
 
 
-class MidiPredictionMetrics(MetricsCallback):
+class MelodicPredictionMetrics(MetricsCallback):
     def load_metrics(self, metrics_history):
-        self.metrics_history = [MidiPredictionOutputMetrics(*x) for x in metrics_history]
+        self.metrics_history = [MelodicPredictionOutputMetrics(*x) for x in metrics_history]
 
     def predict(self, X, y, epoch=None):
         y_probs = self.model.predict_on_batch(X)
@@ -151,10 +150,14 @@ class MidiPredictionMetrics(MetricsCallback):
         self.save_midi(y_probs, y, epoch)
         self.save_stack_midi(y_probs, y, epoch)
         if self.note_based:
-            sequence_label = sequence_prediction_util.predict_sequence(y[0][0], None, None, None,
-                                                                       constants.MIN_MIDI_PITCH,
-                                                                       self.hparams)
+            sequence_label = sequence_prediction_util.predict_sequence(
+                y[0][0], onset_predictions=None, offset_predictions=None,
+                velocity_values=None, min_pitch=constants.MIN_MIDI_PITCH,
+                hparams=self.hparams
+            )
             return calculate_metrics(
+                frame_probs=y_probs[0][0],
+                onset_probs=y_probs[2][0],
                 frame_predictions=y_probs[0][0] > self.hparams.predict_frame_threshold,
                 onset_predictions=y_probs[1][0] > self.hparams.predict_onset_threshold,
                 offset_predictions=y_probs[2][0] > self.hparams.predict_offset_threshold,
@@ -172,7 +175,7 @@ class MidiPredictionMetrics(MetricsCallback):
         offset_metrics = calculate_frame_metrics(y[2],
                                                  y_probs[2] > self.hparams.predict_offset_threshold)
 
-        return MidiPredictionOutputMetrics(frame_metrics, onset_metrics, offset_metrics)
+        return MelodicPredictionOutputMetrics(frame_metrics, onset_metrics, offset_metrics)
 
 
 class TimbrePredictionMetrics(MetricsCallback):
@@ -190,7 +193,7 @@ class TimbrePredictionMetrics(MetricsCallback):
 
 class FullPredictionMetrics(MetricsCallback):
     def load_metrics(self, metrics_history):
-        self.metrics_history = [MidiPredictionOutputMetrics(*x) for x in metrics_history]
+        self.metrics_history = [MelodicPredictionOutputMetrics(*x) for x in metrics_history]
 
     def predict(self, X, y, epoch=None):
         y_probs = self.model.predict_on_batch(X)
@@ -213,7 +216,7 @@ class FullPredictionMetrics(MetricsCallback):
                              [get_last_channel(t) for t in y], epoch)
 
         del y_probs
-        return MidiPredictionOutputMetrics(frame_metrics, onset_metrics, offset_metrics)
+        return MelodicPredictionOutputMetrics(frame_metrics, onset_metrics, offset_metrics)
 
 
 class EvaluationMetrics(MetricsCallback):

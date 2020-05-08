@@ -15,7 +15,7 @@
 """Tensorflow-related utilities."""
 
 import tensorflow.compat.v1 as tf
-from tensorflow.contrib import training as contrib_training
+# from tensorflow.contrib import training as contrib_training
 
 
 def merge_hparams(hparams_1, hparams_2):

@@ -37,10 +37,10 @@ class DataGenerator(keras.utils.Sequence):
     def __getitem__(self, index):
         with self.lock:
             if self.use_numpy:
-                x, y = ([t.numpy() for t in tensors] for tensors in next(self.iterator))
+                X, y = ([t.numpy() for t in tensors] for tensors in next(self.iterator))
             else:
-                x, y = ([t for t in tensors] for tensors in next(self.iterator))
-            return x, y
+                X, y = ([t for t in tensors] for tensors in next(self.iterator))
+            return X, y
 
     def get(self):
         """Simple get item API"""

@@ -40,7 +40,7 @@ def get_default_hparams():
 class FullModel:
     def __init__(self, melodic_model, timbre_model, hparams):
         if hparams is None:
-            hparams = DotMap()
+            hparams = DotMap(get_default_hparams())
         self.hparams = hparams
         self.melodic_model: Model = melodic_model
         self.timbre_model: Model = timbre_model

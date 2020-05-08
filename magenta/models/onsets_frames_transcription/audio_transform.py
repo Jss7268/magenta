@@ -25,7 +25,7 @@ import tempfile
 
 import sox
 import tensorflow.compat.v1 as tf
-from tensorflow.contrib import training as contrib_training
+# from tensorflow.contrib import training as contrib_training
 
 # The base pipeline is a list of stages, each of which consists of a name
 # (corresponding to a SoX function) and a dictionary of parameters with name
@@ -64,15 +64,15 @@ AUDIO_TRANSFORM_PIPELINE = [
 # Default hyperparameter values from the above pipeline. Note the additional
 # `transform_audio` hparam that defaults to False, i.e. by default no audio
 # transformation will be performed.
-DEFAULT_AUDIO_TRANSFORM_HPARAMS = contrib_training.HParams(
-    transform_audio=False,
-    audio_transform_noise_type='pinknoise',
-    audio_transform_min_noise_vol=0.0,
-    audio_transform_max_noise_vol=0.04,
-    **dict(('audio_transform_%s_%s_%s' % (m, stage_name, param_name), value)
-           for stage_name, params_dict in AUDIO_TRANSFORM_PIPELINE
-           for param_name, (min_value, max_value, _) in params_dict.items()
-           for m, value in [('min', min_value), ('max', max_value)]))
+# DEFAULT_AUDIO_TRANSFORM_HPARAMS = contrib_training.HParams(
+#     transform_audio=False,
+#     audio_transform_noise_type='pinknoise',
+#     audio_transform_min_noise_vol=0.0,
+#     audio_transform_max_noise_vol=0.04,
+#     **dict(('audio_transform_%s_%s_%s' % (m, stage_name, param_name), value)
+#            for stage_name, params_dict in AUDIO_TRANSFORM_PIPELINE
+#            for param_name, (min_value, max_value, _) in params_dict.items()
+#            for m, value in [('min', min_value), ('max', max_value)]))
 
 
 class AudioTransformParameter(object):

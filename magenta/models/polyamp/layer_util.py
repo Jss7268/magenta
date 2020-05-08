@@ -41,13 +41,11 @@ def conv_elu_pool_layer(num_filters, conv_temporal_size, conv_freq_size, pool_si
 
     def conv_elu_pool_fn(x):
         return elu_pool_layer(pool_size, activation_fn=activation_fn)(
-            Conv2D(
-                num_filters,
-                [conv_temporal_size, conv_freq_size],
-                padding='same',
-                use_bias=False,
-                kernel_initializer='he_uniform',
-            ))(x)
+            Conv2D(num_filters,
+                   [conv_temporal_size, conv_freq_size],
+                   padding='same',
+                   use_bias=False,
+                   kernel_initializer='he_uniform')(x))
 
     return conv_elu_pool_fn
 
@@ -158,7 +156,7 @@ class NoteCroppingsToPianorolls(layers.Layer):
         """
         Convert note croppings and their corresponding timbre
         predictions to a pianoroll that
-        we can multiply by the melodic midi predictions.
+        we can multiply by the melodic predictions.
         :param input_list: note_croppings, timbre_probs, pianorolls
         :return: a pianoroll with shape:
         (batches, pianoroll_length, 88, timbre_num_classes + 1)
