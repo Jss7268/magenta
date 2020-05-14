@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+# Lint as: python3
 """MusicVAE training script."""
 
 from __future__ import absolute_import
@@ -22,7 +23,7 @@ import os
 
 from magenta.models.music_vae import configs
 from magenta.models.music_vae import data
-import tensorflow as tf
+import tensorflow.compat.v1 as tf
 from tensorflow.contrib import training as contrib_training
 
 flags = tf.app.flags
@@ -119,7 +120,7 @@ def _trial_summary(hparams, examples_path, output_dir):
 def _get_input_tensors(dataset, config):
   """Get input tensors from dataset."""
   batch_size = config.hparams.batch_size
-  iterator = dataset.make_one_shot_iterator()
+  iterator = tf.data.make_one_shot_iterator(dataset)
   (input_sequence, output_sequence, control_sequence,
    sequence_length) = iterator.get_next()
   input_sequence.set_shape(
@@ -176,7 +177,7 @@ def train(train_dir,
             num_sync_workers)
         hooks.append(optimizer.make_session_run_hook(is_chief))
 
-      grads, var_list = zip(*optimizer.compute_gradients(model.loss))
+      grads, var_list = list(zip(*optimizer.compute_gradients(model.loss)))
       global_norm = tf.global_norm(grads)
       tf.summary.scalar('global_norm', global_norm)
 
@@ -193,7 +194,8 @@ def train(train_dir,
         raise ValueError(
             'Unknown clip_mode: {}'.format(config.hparams.clip_mode))
       train_op = optimizer.apply_gradients(
-          zip(clipped_grads, var_list), global_step=model.global_step,
+          list(zip(clipped_grads, var_list)),
+          global_step=model.global_step,
           name='train_step')
 
       logging_dict = {'global_step': model.global_step,
@@ -339,6 +341,7 @@ def main(unused_argv):
 
 
 def console_entry_point():
+  tf.disable_v2_behavior()
   tf.app.run(main)
 
 

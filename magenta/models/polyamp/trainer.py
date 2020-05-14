@@ -89,7 +89,7 @@ absl.flags.DEFINE_string(
     'audio_filename', '',
     'Audio file to transcribe'
 )
-absl.flags.DEFINE_enum('model_type', 'MIDI', ['MIDI', 'TIMBRE', 'FULL'],
+absl.flags.DEFINE_enum('model_type', 'MELODIC', ['MELODIC', 'TIMBRE', 'FULL'],
                        'type of model to train')
 
 absl.flags.DEFINE_enum('dataset_name', 'nsynth', ['nsynth', 'slakh'],
@@ -104,7 +104,10 @@ def run(config_map, data_fn, additional_trial_info):
     """Run training or evaluation."""
     logging.set_verbosity(FLAGS.log)
 
-    config = config_map[FLAGS.config]
+    if FLAGS.mode == 'eval':
+        config = config_map[model_util.ModelType.FULL.value]
+    else:
+        config = config_map[model_util.ModelType[FLAGS.model_type].value]
     model_dir = os.path.expanduser(FLAGS.model_dir)
 
     hparams = config.hparams
@@ -113,7 +116,6 @@ def run(config_map, data_fn, additional_trial_info):
     hparams.update(json.loads(FLAGS.hparams))
     hparams = DotMap(hparams)
 
-    hparams.using_plaidml = FLAGS.using_plaidml
     hparams.model_id = FLAGS.model_id
     hparams.load_id = FLAGS.load_id
 
@@ -137,17 +139,10 @@ def run(config_map, data_fn, additional_trial_info):
                               hparams=hparams
                               )
     elif FLAGS.mode == 'eval':
-        train_util.evaluate(
-            # model_fn=config.model_fn,
-            data_fn=data_fn,
-            additional_trial_info=additional_trial_info,
-            model_dir=model_dir,
-            model_type=model_util.ModelType[FLAGS.model_type],
-            name=FLAGS.eval_name,
-            preprocess_examples=FLAGS.preprocess_examples,
-            hparams=hparams,
-            num_steps=FLAGS.eval_num_steps,
-            note_based=FLAGS.note_based)
+        train_util.evaluate(data_fn=data_fn, model_dir=model_dir,
+                            model_type=model_util.ModelType[FLAGS.model_type],
+                            preprocess_examples=FLAGS.preprocess_examples, hparams=hparams,
+                            num_steps=FLAGS.eval_num_steps, note_based=FLAGS.note_based)
     else:
         raise ValueError('Unknown/unsupported mode: %s' % FLAGS.mode)
 

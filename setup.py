@@ -37,6 +37,11 @@ REQUIRED_PACKAGES = [
     # https://github.com/tensorflow/tensorflow/issues/32319
     # https://github.com/tensorflow/tensorflow/commit/c72125bd59858ec82a9238b232bbd77c45889c5a
     'gast == 0.2.2',
+    # tensor2tensor requires gym, but the newest version of gym depends on a
+    # a version of cloudpickle that is incompatible with tensorflow-probability
+    # 0.7.0.
+    'gym < 0.16.0',
+    'imageio',
     'intervaltree >= 2.1.0',
     'joblib >= 0.12',
     'librosa >= 0.6.2',
@@ -53,7 +58,10 @@ REQUIRED_PACKAGES = [
     'scipy >= 0.18.1',
     'six >= 1.12.0',
     'sk-video',
-    'dm-sonnet < 2.0.0',  # Sonnet 2 requires TF2.
+    # Keep Sonnet < 2.0.0 because that requires TF2.
+    # For now, restrict to < 1.36 because that requires tensorflow-probability
+    # 0.8.0, which causes problems with tensor2tensor.
+    'dm-sonnet < 1.36.0',  # Sonnet 2 requires TF2.
     'sox >= 1.3.7',
     # 'tensorflow >= 1.15.0, < 2.0.0',  # Magenta is not yet TF2 compatible.
     'tensorflow >= 2.0.0',  # Magenta is not yet TF2 compatible.
@@ -64,6 +72,9 @@ REQUIRED_PACKAGES = [
     'wheel',
     'futures;python_version=="2.7"',
     'apache-beam[gcp] >= 2.14.0',
+    # Temporary fix for:
+    # https://issues.apache.org/jira/projects/AVRO/issues/AVRO-2737?filter=allopenissues
+    'avro-python3 !=1.9.2',
     'Keras',
     'pydot',
     'graphviz',
@@ -107,18 +118,21 @@ CONSOLE_SCRIPTS = [
     'magenta.models.music_vae.music_vae_train',
     'magenta.models.nsynth.wavenet.nsynth_generate',
     'magenta.models.nsynth.wavenet.nsynth_save_embeddings',
-    'magenta.models.polyamp.onsets_frames_transcription_create_dataset_maps',
-    'magenta.models.polyamp.onsets_frames_transcription_create_dataset_maestro',
-    'magenta.models.polyamp.onsets_frames_transcription_infer',
-    'magenta.models.polyamp.onsets_frames_transcription_train',
-    'magenta.models.polyamp.onsets_frames_transcription_transcribe',
-    'magenta.models.polyamp.realtime.onsets_frames_transcription_realtime',
+    'magenta.models.onsets_frames_transcription.onsets_frames_transcription_create_dataset',
+    'magenta.models.onsets_frames_transcription.onsets_frames_transcription_create_dataset_maps',
+    'magenta.models.onsets_frames_transcription.onsets_frames_transcription_create_tfrecords',
+    'magenta.models.onsets_frames_transcription.onsets_frames_transcription_infer',
+    'magenta.models.onsets_frames_transcription.onsets_frames_transcription_train',
+    'magenta.models.onsets_frames_transcription.onsets_frames_transcription_transcribe',
+    'magenta.models.onsets_frames_transcription.realtime.onsets_frames_transcription_realtime',
     'magenta.models.performance_rnn.performance_rnn_create_dataset',
     'magenta.models.performance_rnn.performance_rnn_generate',
     'magenta.models.performance_rnn.performance_rnn_train',
     'magenta.models.pianoroll_rnn_nade.pianoroll_rnn_nade_create_dataset',
     'magenta.models.pianoroll_rnn_nade.pianoroll_rnn_nade_generate',
     'magenta.models.pianoroll_rnn_nade.pianoroll_rnn_nade_train',
+    'magenta.models.polyamp.polyamp_transcribe',
+    'magenta.models.polyamp.trainer',
     'magenta.models.polyphony_rnn.polyphony_rnn_create_dataset',
     'magenta.models.polyphony_rnn.polyphony_rnn_generate',
     'magenta.models.polyphony_rnn.polyphony_rnn_train',
@@ -147,7 +161,6 @@ setup(
         'Intended Audience :: Education',
         'Intended Audience :: Science/Research',
         'License :: OSI Approved :: Apache Software License',
-        'Programming Language :: Python :: 2.7',
         'Programming Language :: Python :: 3',
         'Topic :: Scientific/Engineering :: Mathematics',
         'Topic :: Software Development :: Libraries :: Python Modules',

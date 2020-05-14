@@ -1,3 +1,17 @@
+# Copyright 2020 Jack Spencer Smith.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 import collections
 import gc
 import os
@@ -7,15 +21,15 @@ import tensorflow as tf
 import tensorflow.keras.backend as K
 from tensorflow.keras.callbacks import Callback
 
-from magenta.models.polyamp import constants, infer_util
+from magenta.models.polyamp import constants, sequence_prediction_util
 from magenta.models.polyamp.accuracy_util import \
     convert_multi_instrument_probs_to_predictions, flatten_f1_wrapper, get_last_channel, \
     multi_track_prf_wrapper, calculate_frame_metrics
-from magenta.models.polyamp.metrics import calculate_metrics
+from magenta.models.onsets_frames_transcription.metrics import calculate_metrics
 from magenta.music import midi_io
 
-MidiPredictionOutputMetrics = (
-    collections.namedtuple('MidiPredictionOutputMetrics',
+MelodicPredictionOutputMetrics = (
+    collections.namedtuple('MelodicPredictionOutputMetrics',
                            ('frames', 'onsets', 'offsets'))
 )
 TimbrePredictionOutputMetrics = (
@@ -46,25 +60,20 @@ class MetricsCallback(Callback):
         offset_predictions = y_probs[2][0] > self.hparams.predict_offset_threshold
         active_onsets = y_probs[1][0] > self.hparams.active_onset_threshold
 
-        sequence = infer_util.predict_sequence(
-            frame_predictions=frame_predictions,
-            onset_predictions=onset_predictions,
-            offset_predictions=offset_predictions,
-            active_onsets=active_onsets,
-            velocity_values=None,
-            hparams=self.hparams,
-            min_pitch=constants.MIN_MIDI_PITCH,
-            instrument=1
-        )
-        sequence.notes.extend(infer_util.predict_sequence(
-            frame_predictions=y_true[0][0],
-            onset_predictions=y_true[1][0],
-            offset_predictions=y_true[2][0],
-            velocity_values=None,
-            hparams=self.hparams,
-            min_pitch=constants.MIN_MIDI_PITCH,
-            instrument=0
-        ).notes)
+        sequence = sequence_prediction_util.predict_sequence(frame_predictions=frame_predictions,
+                                                             onset_predictions=onset_predictions,
+                                                             offset_predictions=offset_predictions,
+                                                             velocity_values=None,
+                                                             min_pitch=constants.MIN_MIDI_PITCH,
+                                                             hparams=self.hparams, instrument=1,
+                                                             active_onsets=active_onsets)
+        sequence.notes.extend(
+            sequence_prediction_util.predict_sequence(frame_predictions=y_true[0][0],
+                                                      onset_predictions=y_true[1][0],
+                                                      offset_predictions=y_true[2][0],
+                                                      velocity_values=None,
+                                                      min_pitch=constants.MIN_MIDI_PITCH,
+                                                      hparams=self.hparams, instrument=0).notes)
         midi_filename = f'{self.save_dir}/{epoch}_predicted.midi'
         midi_io.sequence_proto_to_midi_file(sequence, midi_filename)
 
@@ -72,25 +81,23 @@ class MetricsCallback(Callback):
         frame_predictions = y_true[0][0]
         onset_predictions = y_true[1][0]
         offset_predictions = y_true[2][0]
-        sequence = infer_util.predict_sequence(
-            frame_predictions=frame_predictions,
-            onset_predictions=onset_predictions,
-            offset_predictions=offset_predictions,
-            velocity_values=None,
-            hparams=self.hparams,
-            min_pitch=constants.MIN_MIDI_PITCH,
-            instrument=0)
+        sequence = sequence_prediction_util.predict_sequence(frame_predictions=frame_predictions,
+                                                             onset_predictions=onset_predictions,
+                                                             offset_predictions=offset_predictions,
+                                                             velocity_values=None,
+                                                             min_pitch=constants.MIN_MIDI_PITCH,
+                                                             hparams=self.hparams, instrument=0)
 
         for i in range(3):
             # Output midi values for each stack (frames, onsets, offsets).
-            sequence.notes.extend(infer_util.predict_sequence(
-                frame_predictions=y_probs[i][0] > 0.5,
-                onset_predictions=None,
-                offset_predictions=None,
-                velocity_values=None,
-                hparams=self.hparams,
-                min_pitch=constants.MIN_MIDI_PITCH,
-                instrument=i + 1).notes)
+            sequence.notes.extend(
+                sequence_prediction_util.predict_sequence(frame_predictions=y_probs[i][0] > 0.5,
+                                                          onset_predictions=None,
+                                                          offset_predictions=None,
+                                                          velocity_values=None,
+                                                          min_pitch=constants.MIN_MIDI_PITCH,
+                                                          hparams=self.hparams,
+                                                          instrument=i + 1).notes)
 
         midi_filename = f'{self.save_dir}/{epoch}_stacks.midi'
         midi_io.sequence_proto_to_midi_file(sequence, midi_filename)
@@ -112,13 +119,12 @@ class MetricsCallback(Callback):
         try:
             metrics = self.predict(x, y, epoch=epoch)
         except Exception as e:
-            print(e)
-            return
+            raise e
         if type(metrics) is dict:
             metrics_dict = metrics
         else:
             metrics_dict = metrics._asdict()
-        self.metrics_history.append(metrics_dict)
+        self.metrics_history.append(metrics)
         try:
             for name, value in metrics_dict.items():
                 print('{} metrics:'.format(name))
@@ -133,9 +139,9 @@ class MetricsCallback(Callback):
         gc.collect()
 
 
-class MidiPredictionMetrics(MetricsCallback):
+class MelodicPredictionMetrics(MetricsCallback):
     def load_metrics(self, metrics_history):
-        self.metrics_history = [MidiPredictionOutputMetrics(*x) for x in metrics_history]
+        self.metrics_history = [MelodicPredictionOutputMetrics(*x) for x in metrics_history]
 
     def predict(self, X, y, epoch=None):
         y_probs = self.model.predict_on_batch(X)
@@ -144,9 +150,14 @@ class MidiPredictionMetrics(MetricsCallback):
         self.save_midi(y_probs, y, epoch)
         self.save_stack_midi(y_probs, y, epoch)
         if self.note_based:
-            sequence_label = infer_util.predict_sequence(y[0][0], None, None, None,
-                                                         constants.MIN_MIDI_PITCH, self.hparams)
+            sequence_label = sequence_prediction_util.predict_sequence(
+                y[0][0], onset_predictions=None, offset_predictions=None,
+                velocity_values=None, min_pitch=constants.MIN_MIDI_PITCH,
+                hparams=self.hparams
+            )
             return calculate_metrics(
+                frame_probs=y_probs[0][0],
+                onset_probs=y_probs[2][0],
                 frame_predictions=y_probs[0][0] > self.hparams.predict_frame_threshold,
                 onset_predictions=y_probs[1][0] > self.hparams.predict_onset_threshold,
                 offset_predictions=y_probs[2][0] > self.hparams.predict_offset_threshold,
@@ -164,7 +175,7 @@ class MidiPredictionMetrics(MetricsCallback):
         offset_metrics = calculate_frame_metrics(y[2],
                                                  y_probs[2] > self.hparams.predict_offset_threshold)
 
-        return MidiPredictionOutputMetrics(frame_metrics, onset_metrics, offset_metrics)
+        return MelodicPredictionOutputMetrics(frame_metrics, onset_metrics, offset_metrics)
 
 
 class TimbrePredictionMetrics(MetricsCallback):
@@ -182,7 +193,7 @@ class TimbrePredictionMetrics(MetricsCallback):
 
 class FullPredictionMetrics(MetricsCallback):
     def load_metrics(self, metrics_history):
-        self.metrics_history = [MidiPredictionOutputMetrics(*x) for x in metrics_history]
+        self.metrics_history = [MelodicPredictionOutputMetrics(*x) for x in metrics_history]
 
     def predict(self, X, y, epoch=None):
         y_probs = self.model.predict_on_batch(X)
@@ -205,14 +216,15 @@ class FullPredictionMetrics(MetricsCallback):
                              [get_last_channel(t) for t in y], epoch)
 
         del y_probs
-        return MidiPredictionOutputMetrics(frame_metrics, onset_metrics, offset_metrics)
+        return MelodicPredictionOutputMetrics(frame_metrics, onset_metrics, offset_metrics)
 
 
 class EvaluationMetrics(MetricsCallback):
     def __init__(self, is_full=True, **kwargs):
         self.is_full = is_full
+        # TODO use variables
         if self.is_full:
-            self.num_classes = 12 + 1
+            self.num_classes = 12 + 1  # include instrument-agnostic
         else:
             self.num_classes = 12
         super().__init__(**kwargs)

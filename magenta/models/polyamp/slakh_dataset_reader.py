@@ -121,10 +121,9 @@ def provide_batch(examples,
             timbre_dataset_reader.include_spectrogram, hparams=hparams
         ))
 
-        model_input = spec_dataset.map(functools.partial(
-            timbre_dataset_reader.timbre_input_tensors_to_model_input,
-            hparams=hparams, is_training=is_training
-        ))
+        model_input = spec_dataset.map(
+            timbre_dataset_reader.timbre_input_tensors_to_model_input
+        )
 
         dataset = model_input.padded_batch(
             hparams.slakh_batch_size,

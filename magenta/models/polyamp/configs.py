@@ -45,6 +45,7 @@ DEFAULT_HPARAMS = {
         'timbre_max_start_offset': 160000,  # 10 seconds
         'timbre_min_len': 8000,
         'timbre_max_len': 0,
+        'timbre_num_classes': constants.NUM_INSTRUMENT_FAMILIES + 1,
         'sample_rate': 16000,
         'spec_type': 'cqt',
         'spec_mel_htk': True,
@@ -66,6 +67,8 @@ DEFAULT_HPARAMS = {
         'jitter_amount_ms': 0,
         'min_duration_ms': 0,
         'backward_shift_amount_ms': 0,
+        'velocity_scale': 80.0,
+        'velocity_bias': 10.0,
     }}
 
 CONFIG_MAP = {}

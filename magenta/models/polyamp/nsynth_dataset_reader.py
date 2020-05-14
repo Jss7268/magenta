@@ -36,16 +36,16 @@ def _parse_nsynth_example(example_proto):
 
 def _get_approx_note_length(samples):
     window = 2048
-    pooled_samples = np.max(
-        np.abs([np.max(samples.numpy()[i:i + window]) for i in
-                range(0, len(samples.numpy()), window)]),
-        axis=-1)
+    pooled_samples = np.abs(
+        [np.max(samples.numpy()[i:i + window]) for i in range(0, len(samples.numpy()), window)]
+    )
     argmax = np.argmax(pooled_samples)
     max_amplitude = np.max(pooled_samples)
     low_amplitudes = np.ndarray.flatten(np.argwhere(pooled_samples < 0.1 * max_amplitude))
     try:
         first_low = np.ndarray.flatten(np.argwhere(low_amplitudes > argmax))[0]
-    except KeyError:
+    except IndexError as e:
+        print(e)
         return len(samples)
     else:
         release_idx = low_amplitudes[first_low]
@@ -141,7 +141,6 @@ def provide_batch(examples,
     :param kwargs: Unused.
     :return: TensorFlow batched dataset.
     """
-    hparams = params
 
     input_dataset = dataset_reader.read_examples(
         examples, is_training, shuffle_examples, skip_n_initial_records, hparams)
@@ -160,10 +159,9 @@ def provide_batch(examples,
         spec_dataset = reduced_dataset.map(
             functools.partial(timbre_dataset_reader.include_spectrogram, hparams=hparams)
         )
-        model_input = spec_dataset.map(functools.partial(
+        model_input = spec_dataset.map(
             timbre_dataset_reader.timbre_input_tensors_to_model_input,
-            hparams=hparams, is_training=is_training
-        ))
+        )
         dataset = model_input.batch(hparams.nsynth_batch_size)
 
     return dataset.prefetch(buffer_size=1)

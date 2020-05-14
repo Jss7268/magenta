@@ -32,6 +32,15 @@ import numpy as np
 import tensorflow.compat.v1 as tf
 
 
+def velocity_range_from_sequence(ns):
+  """Derive a VelocityRange proto from a NoteSequence."""
+  velocities = [note.velocity for note in ns.notes]
+  velocity_max = np.max(velocities) if velocities else 0
+  velocity_min = np.min(velocities) if velocities else 0
+  velocity_range = music_pb2.VelocityRange(min=velocity_min, max=velocity_max)
+  return velocity_range
+
+
 def find_inactive_ranges(note_sequence):
   """Returns ranges where no notes are active in the note_sequence."""
   start_sequence = sorted(
@@ -206,10 +215,7 @@ def find_split_points(note_sequence, samples, sample_rate, min_length,
 def create_example(example_id, ns, wav_data, velocity_range=None):
   """Creates a tf.train.Example proto for training or testing."""
   if velocity_range is None:
-    velocities = [note.velocity for note in ns.notes]
-    velocity_max = np.max(velocities)
-    velocity_min = np.min(velocities)
-    velocity_range = music_pb2.VelocityRange(min=velocity_min, max=velocity_max)
+    velocity_range = velocity_range_from_sequence(ns)
 
   # Ensure that all sequences for training and evaluation have gone through
   # sustain processing.
@@ -292,10 +298,7 @@ def process_record(wav_data,
     splits = find_split_points(ns, samples, sample_rate, min_length, max_length)
   else:
     splits = [0, ns.total_time]
-  velocities = [note.velocity for note in ns.notes]
-  velocity_max = np.max(velocities) if velocities else 0
-  velocity_min = np.min(velocities) if velocities else 0
-  velocity_range = music_pb2.VelocityRange(min=velocity_min, max=velocity_max)
+  velocity_range = velocity_range_from_sequence(ns)
 
   for start, end in zip(splits[:-1], splits[1:]):
     if end - start < min_length:
@@ -307,7 +310,7 @@ def process_record(wav_data,
       new_ns = sequences_lib.extract_subsequence(ns, start, end)
 
     if not new_ns.notes and not allow_empty_notesequence:
-      tf.compat.v1.logging.warning('skipping empty sequence')
+      tf.logging.warning('skipping empty sequence')
       continue
 
     if start == 0 and end == ns.total_time:
@@ -340,6 +343,18 @@ def mix_sequences(individual_samples, sample_rate, individual_sequences):
     mixed_samples: The mixed audio.
     mixed_sequence: The mixed NoteSequence.
   """
+  # Normalize samples and sequence velocities before mixing.
+  # This ensures that the velocities/loudness of the individual samples
+  # are treated equally.
+  for i, samples in enumerate(individual_samples):
+    individual_samples[i] = librosa.util.normalize(samples, norm=np.inf)
+  for sequence in individual_sequences:
+    velocities = [note.velocity for note in sequence.notes]
+    velocity_max = np.max(velocities)
+    for note in sequence.notes:
+      note.velocity = int(
+          (note.velocity / velocity_max) * constants.MAX_MIDI_VELOCITY)
+
   # Ensure that samples are always at least as long as their paired sequences.
   for i, (samples, sequence) in enumerate(
       zip(individual_samples, individual_sequences)):

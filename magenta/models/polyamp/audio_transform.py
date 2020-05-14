@@ -1,4 +1,5 @@
 # Copyright 2020 The Magenta Authors.
+# Modifications Copyright 2020 Jack Spencer Smith.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -14,9 +15,7 @@
 
 """SoX-based audio transform functions for the purpose of data augmentation."""
 
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
+from __future__ import absolute_import, division, print_function
 
 import math
 import os
@@ -238,6 +237,8 @@ def transform_wav_audio(wav_audio, hparams, pipeline=None):
     pipeline = construct_pipeline(
         hparams, pipeline if pipeline is not None else AUDIO_TRANSFORM_PIPELINE)
 
+    # Limitations with temporary files in Windows
+    # require the following to overcome.
     temp_input_with_noise_fd, temp_input_with_noise_name = tempfile.mkstemp(suffix='.wav')
     try:
         temp_input_fd, temp_input_name = tempfile.mkstemp(suffix='.wav')
@@ -260,7 +261,6 @@ def transform_wav_audio(wav_audio, hparams, pipeline=None):
                 with os.fdopen(temp_output_fd, 'rb') as temp_output:
                     return temp_output.read()
             finally:
-                #os.close(temp_output_fd)
                 os.remove(temp_output_name)
         finally:
             os.close(temp_input_fd)

@@ -178,7 +178,7 @@ def transform_wav_data_op(wav_data_tensor, hparams, jitter_amount_sec):
 
 
 def _sequence_to_pianoroll_fn(sequence_tensor, velocity_range_tensor,
-                              hparams, instrument_family=None):
+                              instrument_family=None, hparams=None):
     """Converts sequence to pianorolls."""
     if instrument_family is not None and instrument_family < 0:
         instrument_family = None
@@ -397,9 +397,13 @@ def preprocess_example(example_proto, hparams, is_training, parse_proto=True):
             timbre_spec = timbre_spec - librosa.power_to_db(np.array([1e-9]))[0]
             timbre_spec /= K.max(timbre_spec)
         spec = (spec, timbre_spec)
-
-    labels, label_weights, onsets, offsets, velocities = sequence_to_pianoroll_op(
-        sequence, velocity_range, hparams=hparams)
+        labels, label_weights, onsets, offsets, velocities = (
+            sequence_to_multi_pianoroll_op(sequence, velocity_range, hparams=hparams)
+        )
+    else:
+        labels, label_weights, onsets, offsets, velocities = (
+            sequence_to_pianoroll_op(sequence, velocity_range, hparams=hparams)
+        )
 
     length = wav_to_num_frames_op(audio, hparams_frames_per_second(hparams))
 
@@ -456,7 +460,6 @@ def input_tensors_to_model_input(input_tensors, hparams, is_training,
     """Processes an InputTensor into FeatureTensors and LabelTensors."""
     length = tf.cast(input_tensors.length, tf.int32)
     labels = input_tensors.labels
-    label_weights = input_tensors.label_weights
     onsets = input_tensors.onsets
     offsets = input_tensors.offsets
     velocities = input_tensors.velocities
@@ -486,6 +489,18 @@ def input_tensors_to_model_input(input_tensors, hparams, is_training,
         # In this case, it is min(hparams.truncated_length, length).
         final_length = truncated_length
 
+    if hparams.split_pianoroll:
+        spec_256 = spec[1]
+        spec = spec[0]
+        spec_256_length = int(
+            final_length * hparams.spec_hop_length / hparams.timbre_hop_length)
+        spec_256_delta = tf.shape(spec_256)[0] - spec_256_length
+        spec_256 = tf.case(
+            [(spec_256_delta < 0,
+              lambda: tf.pad(spec_256, tf.stack([(0, -spec_256_delta), (0, 0)]))),
+             (spec_256_delta > 0, lambda: spec_256[0:-spec_256_delta])],
+            default=lambda: spec_256)
+
     spec_delta = tf.shape(spec)[0] - final_length
     spec = tf.case(
         [(spec_delta < 0,
@@ -500,11 +515,6 @@ def input_tensors_to_model_input(input_tensors, hparams, is_training,
           lambda: tf.pad(labels, padding)),
          (labels_delta > 0, lambda: labels[0:-labels_delta])],
         default=lambda: labels)
-    label_weights = tf.case(
-        [(labels_delta < 0,
-          lambda: tf.pad(label_weights, padding)
-          ), (labels_delta > 0, lambda: label_weights[0:-labels_delta])],
-        default=lambda: label_weights)
     onsets = tf.case(
         [(labels_delta < 0,
           lambda: tf.pad(onsets, padding)),
@@ -522,16 +532,6 @@ def input_tensors_to_model_input(input_tensors, hparams, is_training,
         default=lambda: velocities)
 
     if hparams.split_pianoroll:
-        spec_256 = spec[1]
-        spec = spec[0]
-        spec_256_length = int(
-            final_length * hparams.spec_hop_length / hparams.timbre_hop_length)
-        spec_256_delta = tf.shape(spec_256)[0] - spec_256_length
-        spec_256 = tf.case(
-            [(spec_256_delta < 0,
-              lambda: tf.pad(spec_256, tf.stack([(0, -spec_256_delta), (0, 0)]))),
-             (spec_256_delta > 0, lambda: spec_256[0:-spec_256_delta])],
-            default=lambda: spec_256)
         features = MultiFeatureTensors(
             spec_512=tf.reshape(spec, (final_length, hparams_frame_size(hparams), 1)),
             spec_256=tf.reshape(spec_256, (spec_256_length, hparams_frame_size(hparams), 1)),

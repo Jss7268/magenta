@@ -1,4 +1,5 @@
 # Copyright 2020 The Magenta Authors.
+# Modifications Copyright 2020 Jack Spencer Smith.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,67 +13,63 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-r"""Beam job for creating tfrecord files from datasets.
-Expects a CSV with the following fields: audio_filename, midi_filename, split
+r"""Beam job for creating tfrecord files from multi-instrument datasets.
 Usage:
-onsets_frames_transcription_create_tfrecords \
-  --csv="/path/to/dataset.csv" \
-  --output_directory="/path/to/output" \
-  --num_shards="0" \
-  --wav_dir="/path/to/dataset/audio" \
-  --midi_dir="/path/to/dataset/midi" \
-  --expected_splits="train,validation,test"
+polyamp_create_tfrecords \
+    --expected_splits=train
+    --output_directory="/path/to/output"
+    --base=/path/to/slakh/like/dataset/"
+    --wav_dir="*/mix.flac"
+    --midi_dir="*/all_src.mid"
+    --num_shards=8
+    --max_length=16
 """
-
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
 
 import collections
 import copy
-import csv
 import os
 
-import librosa
-from absl import app
-from absl import flags
-from absl import logging
-
 import apache_beam as beam
+import librosa
+import tensorflow as tf
+import absl.flags
+from absl import app, logging
 from apache_beam.metrics import Metrics
-from magenta.models.polyamp import audio_label_data_utils
-from magenta.music import midi_io, audio_io
+
+from magenta.models.onsets_frames_transcription import audio_label_data_utils
+from magenta.music import audio_io, midi_io
 from magenta.music.protobuf import music_pb2
-import tensorflow.compat.v1 as tf
 
-FLAGS = flags.FLAGS
+FLAGS = absl.flags.FLAGS
 
-flags.DEFINE_string('base', None, 'Base path')
-flags.DEFINE_string('output_directory', None, 'Path to output_directory')
-flags.DEFINE_string('wav_dir', None, 'Directory for wav files.')
-flags.DEFINE_string('midi_dir', None, 'Directory for midi files.')
-flags.DEFINE_integer('num_shards', 0, 'number of output shards')
-flags.DEFINE_string('expected_splits', 'train,validation,test',
+absl.flags.DEFINE_string('base', None, 'Base path')
+absl.flags.DEFINE_string('output_directory', None, 'Path to output_directory')
+absl.flags.DEFINE_string('wav_dir', None, 'Directory for wav files.')
+absl.flags.DEFINE_string('midi_dir', None, 'Directory for midi files.')
+absl.flags.DEFINE_integer('num_shards', 0, 'number of output shards')
+absl.flags.DEFINE_string('expected_splits', 'train,validation,test',
                     'Comma separated list of expected splits.')
-flags.DEFINE_integer('min_length', 5, 'minimum length for a segment')
-flags.DEFINE_integer('max_length', 20, 'maximum length for a segment')
-flags.DEFINE_integer('sample_rate', 16000,
-                            'sample_rate of the output files')
+absl.flags.DEFINE_integer('min_length', 5, 'minimum length for a segment')
+absl.flags.DEFINE_integer('max_length', 20, 'maximum length for a segment')
+absl.flags.DEFINE_integer('sample_rate', 16000,
+                     'sample_rate of the output files')
 
 # There seems to be inconsistency between all_src.mid and the stems in the slakh dataset.
 # The individual stems are what is actually being played in the wav file
-flags.DEFINE_boolean('use_midi_stems', True, 'If true, use midi stems instead of the single midi file')
-flags.DEFINE_boolean(
+absl.flags.DEFINE_boolean('use_midi_stems', True,
+                     'If true, use midi stems instead of the single midi file')
+absl.flags.DEFINE_boolean(
     'add_wav_glob', False,
     'If true, will add * to end of wav paths and use all matching files.')
-flags.DEFINE_list(
+absl.flags.DEFINE_list(
     'pipeline_options', '--runner=DirectRunner',
     'A comma-separated list of command line arguments to be used as options '
     'for the Beam Pipeline.')
-flags.DEFINE_boolean(
+absl.flags.DEFINE_boolean(
     'convert_flac', True,
     'Convert flac to wav'
 )
+
 
 def note_sequence_from_directory(dir):
     midis = tf.io.gfile.glob(f'{dir}/MIDI/*.mid')
@@ -158,7 +155,7 @@ class CreateExampleDoFn(beam.DoFn):
 def main(argv):
     del argv
 
-    flags.mark_flags_as_required(['output_directory'])
+    absl.flags.mark_flags_as_required(['output_directory'])
 
     tf.io.gfile.makedirs(FLAGS.output_directory)
 

@@ -12,11 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+# Lint as: python3
 """Generate pianoroll tracks from a trained RNN-NADE checkpoint.
 
 Uses flags to define operation.
 """
-
 import ast
 import os
 import time
@@ -29,7 +29,7 @@ from magenta.models.shared import sequence_generator_bundle
 from magenta.music import constants
 from magenta.music.protobuf import generator_pb2
 from magenta.music.protobuf import music_pb2
-import tensorflow as tf
+import tensorflow.compat.v1 as tf
 
 FLAGS = tf.app.flags.FLAGS
 tf.app.flags.DEFINE_string(

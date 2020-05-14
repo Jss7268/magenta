@@ -12,22 +12,20 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+# Lint as: python3
 """Sample from pre-trained WaveGAN model.
 
 This script provides sampling from pre-trained WaveGAN model that is done
 through the original author's code (https://github.com/chrisdonahue/wavegan).
 The main purpose is to help manually check the quality of WaveGAN model.
 """
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
 
 import operator
 import os
 
 import numpy as np
 from scipy.io import wavfile
-import tensorflow as tf
+import tensorflow.compat.v1 as tf
 from tqdm import tqdm
 
 FLAGS = tf.flags.FLAGS

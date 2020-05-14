@@ -80,31 +80,28 @@ def run(argv, config_map):
                                  hparams=hparams)
 
     if model_type is model_util.ModelType.FULL:
-        midi_model_wrapper = ModelWrapper(FLAGS.model_dir, ModelType.MELODIC, hparams=hparams)
-        midi_model_wrapper.build_model(compile=False)
-        midi_model_wrapper.load_newest()
+        melodic_model_wrapper = ModelWrapper(FLAGS.model_dir, ModelType.MELODIC, hparams=hparams)
+        melodic_model_wrapper.build_model(compile_=False)
+        melodic_model_wrapper.load_newest()
         timbre_model_wrapper = ModelWrapper(FLAGS.model_dir, ModelType.TIMBRE, hparams=hparams)
-        timbre_model_wrapper.build_model(compile=False)
+        timbre_model_wrapper.build_model(compile_=False)
         timbre_model_wrapper.load_newest()
 
-        model_wrapper.build_model(midi_model=midi_model_wrapper.get_model(),
-                                  timbre_model=timbre_model_wrapper.get_model(),
-                                  compile=False)
+        model_wrapper.build_model(melodic_model=melodic_model_wrapper.get_model(),
+                                  timbre_model=timbre_model_wrapper.get_model(), compile_=False)
         model_wrapper.load_newest()
-        midi_model_wrapper.load_newest()
+        if not FLAGS.load_full:
+            melodic_model_wrapper.load_newest()
     else:
-        model_wrapper.build_model(compile=False)
+        model_wrapper.build_model(compile_=False)
         if FLAGS.load_full:
             full_model_wrapper = ModelWrapper(FLAGS.model_dir, ModelType.FULL, hparams=hparams)
-            full_model_wrapper.build_model(
-                compile=False,
-                midi_model=(model_wrapper.get_model()
-                            if model_type is model_util.ModelType.MELODIC
-                            else None),
-                timbre_model=(model_wrapper.get_model()
-                              if model_type is model_util.ModelType.TIMBRE
-                              else None)
-            )
+            full_model_wrapper.build_model(melodic_model=(model_wrapper.get_model()
+                                                          if model_type is model_util.ModelType.MELODIC
+                                                          else None),
+                                           timbre_model=(model_wrapper.get_model()
+                                                         if model_type is model_util.ModelType.TIMBRE
+                                                         else None), compile_=False)
             full_model_wrapper.load_newest()
         else:
             model_wrapper.load_newest()
@@ -131,9 +128,9 @@ def run(argv, config_map):
             logging.info('Running inference...')
             sequence_prediction = model_wrapper.predict_from_spec(spec, qpm=FLAGS.qpm)
         else:
-            midi_spec = samples_to_cqt(samples, hparams=hparams)
+            melodic_spec = samples_to_cqt(samples, hparams=hparams)
             if hparams.spec_log_amplitude:
-                midi_spec = librosa.power_to_db(midi_spec)
+                melodic_spec = librosa.power_to_db(melodic_spec)
 
             temp_hparams = copy.deepcopy(hparams)
             temp_hparams.spec_hop_length = hparams.timbre_hop_length
@@ -146,7 +143,7 @@ def run(argv, config_map):
                 timbre_spec /= K.max(timbre_spec)
 
             # Add "batch" and channel dims.
-            midi_spec = tf.reshape(midi_spec, (1, *midi_spec.shape, 1))
+            melodic_spec = tf.reshape(melodic_spec, (1, *melodic_spec.shape, 1))
             timbre_spec = tf.reshape(timbre_spec, (1, *timbre_spec.shape, 1))
 
             logging.info('Running inference...')
@@ -157,7 +154,7 @@ def run(argv, config_map):
                 present_instruments = None
 
             sequence_prediction = (
-                model_wrapper.predict_multi_sequence(midi_spec=midi_spec,
+                model_wrapper.predict_multi_sequence(melodic_spec=melodic_spec,
                                                      timbre_spec=timbre_spec,
                                                      present_instruments=present_instruments,
                                                      qpm=FLAGS.qpm)

@@ -49,17 +49,20 @@ def _recall_weighing_loss(labels, predictions, epsilon=1e-9, recall_weighing=0):
 def _get_instrument_loss(permuted_y_true, instrument_probs,
                          instrument_idx, hparams,
                          recall_weighing=0, epsilon=1e-9):
-    instrument_loss = tf.reduce_mean(
-        _recall_weighing_loss(permuted_y_true[instrument_idx],
-                              instrument_probs + epsilon,
-                              epsilon=epsilon,
-                              recall_weighing=recall_weighing
-                                              * 1.5
-                                              * hparams.family_recall_weight[
-                                                  instrument_idx]))
+    if 'family_recall_weight' in hparams:
+        instrument_specific_recall_weight = hparams.family_recall_weight[instrument_idx]
+    else:
+        instrument_specific_recall_weight = 1.
+    instrument_loss = tf.reduce_mean(_recall_weighing_loss(
+        permuted_y_true[instrument_idx],
+        instrument_probs + epsilon,
+        epsilon=epsilon,
+        recall_weighing=(recall_weighing
+                         * 1.5
+                         * instrument_specific_recall_weight)))
     if K.sum(permuted_y_true[instrument_idx]) == 0:
-        # Still learn from samples without that instrument
-        # present; don't mess up under-represented instruments.
+        # Still learn from samples without that instrument present.
+        # Don't mess up under-represented instruments.
         instrument_loss *= 1e-2
     return instrument_loss
 
