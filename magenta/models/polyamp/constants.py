@@ -14,13 +14,11 @@
 # limitations under the License.
 
 """Defines shared constants used in transcription models."""
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
+from __future__ import absolute_import, division, print_function
 
-import librosa
 import math
 
+import librosa
 
 MIN_MIDI_PITCH = librosa.note_to_midi('A0')
 MAX_MIDI_PITCH = librosa.note_to_midi('C8')
@@ -45,7 +43,6 @@ FAMILY_IDX_STRINGS = {
     11: 'other',
     12: 'agnostic'
 }
-
 
 SPEC_BANDS = 229
 TIMBRE_SPEC_BANDS = 229

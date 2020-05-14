@@ -19,7 +19,6 @@ import functools
 import librosa
 import numpy as np
 import tensorflow.compat.v2 as tf
-import tensorflow.keras.backend as K
 
 from magenta.models.polyamp import constants, instrument_family_mappings
 from magenta.music import audio_io

@@ -22,8 +22,8 @@ from magenta.models.polyamp import constants, sequence_prediction_util
 from magenta.models.polyamp.accuracy_util import multi_track_present_accuracy_wrapper, \
     multi_track_prf_wrapper, \
     single_track_present_accuracy_wrapper
-from magenta.models.polyamp.loss_util import full_model_loss_wrapper
 from magenta.models.polyamp.layer_util import NoteCroppingsToPianorolls
+from magenta.models.polyamp.loss_util import full_model_loss_wrapper
 from magenta.models.polyamp.timbre_dataset_util import NoteCropping
 
 

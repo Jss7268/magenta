@@ -15,15 +15,14 @@
 
 """Configurations for transcription models."""
 
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
+from __future__ import absolute_import, division, print_function
 
 import collections
+
 import librosa
 
-from magenta.models.polyamp import audio_transform, melodic_model, timbre_model, \
-    constants, full_model
+from magenta.models.polyamp import audio_transform, constants, full_model, melodic_model, \
+    timbre_model
 
 Config = collections.namedtuple('Config', ('hparams',))
 

@@ -18,7 +18,6 @@ import numpy as np
 import tensorflow.compat.v2 as tf
 import tensorflow.keras.backend as K
 
-import magenta.models.polyamp.dataset_reader
 from magenta.models.polyamp import dataset_reader, timbre_dataset_util
 from magenta.music import audio_io
 

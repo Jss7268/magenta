@@ -25,7 +25,6 @@ Glossary (definitions may not hold outside of this particular file):
 from __future__ import absolute_import, division, print_function
 
 import collections
-import copy
 import functools
 import re
 import wave
@@ -39,7 +38,6 @@ from tensorflow_core import TensorShape
 
 from magenta.models.polyamp import audio_transform, constants, instrument_family_mappings, \
     timbre_dataset_util
-from magenta.models.polyamp.timbre_dataset_util import convert_note_cropping_to_sequence_record
 from magenta.music import audio_io, sequences_lib
 from magenta.music.protobuf import music_pb2
 

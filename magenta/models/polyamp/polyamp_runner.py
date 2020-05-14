@@ -25,7 +25,7 @@ from absl import app, logging
 from dotmap import DotMap
 
 from magenta.models.polyamp import configs, dataset_reader, model_util, nsynth_dataset_reader, \
-    slakh_dataset_reader, polyamp_util
+    polyamp_util, slakh_dataset_reader
 from magenta.models.polyamp.dataset_reader import merge_data_functions
 
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'

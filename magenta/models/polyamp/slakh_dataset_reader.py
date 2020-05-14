@@ -12,16 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import copy
 import functools
 
-import librosa
-import numpy as np
 import tensorflow.compat.v2 as tf
 import tensorflow.keras.backend as K
 from tensorflow_core import TensorShape
 
-import magenta.models.polyamp.dataset_reader
 from magenta.models.polyamp import dataset_reader, instrument_family_mappings, \
     timbre_dataset_util
 from magenta.music import sequences_lib
