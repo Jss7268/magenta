@@ -57,10 +57,10 @@ def get_default_hparams():
         'predict_frame_threshold': 0.5,
         'predict_onset_threshold': 0.5,
         'active_onset_threshold': 0.6,
-        'predict_offset_threshold': 0.0,
+        'predict_offset_threshold': 0.5,
         'frames_true_weighing': 2,
-        'onsets_true_weighing': 8,
-        'offsets_true_weighing': 8,
+        'onsets_true_weighing': 1,
+        'offsets_true_weighing': 0.5,
         'input_shape': (None, 229, 1),
         'melodic_leaky_alpha': 0.33,
     }

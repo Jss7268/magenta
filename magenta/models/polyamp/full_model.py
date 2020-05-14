@@ -30,11 +30,10 @@ from magenta.models.polyamp.timbre_dataset_reader import NoteCropping
 def get_default_hparams():
     return {
         'full_learning_rate': 2e-4,
-        'multiple_instruments_threshold': 0.5,
+        'multiple_instruments_threshold': 0.55,
         'use_all_instruments': False,
         'melodic_trainable': True,
         'family_recall_weight': [1.0, 1.4, 1.4, .225, .05, 1.2, 1., 1.3, .45, 1.0, 1.0, .7],
-        'inv_frequency_weight': [.5, .4, .3, 1, 1, .3, .4, .5, .7, .3, .6, .3],
     }
 
 

@@ -92,7 +92,7 @@ absl.flags.DEFINE_string(
 absl.flags.DEFINE_enum('model_type', 'MELODIC', ['MELODIC', 'TIMBRE', 'FULL'],
                        'type of model to train')
 
-absl.flags.DEFINE_enum('dataset_name', 'nsynth', ['nsynth', 'slakh'],
+absl.flags.DEFINE_enum('dataset_type', 'nsynth', ['nsynth', 'slakh'],
                        'type of dataset we are using')
 
 absl.flags.DEFINE_string(
@@ -152,7 +152,7 @@ def main(argv):
     absl.flags.mark_flags_as_required(['examples_path'])
     if model_util.ModelType[FLAGS.model_type] is model_util.ModelType.TIMBRE:
         provide_batch_fn = (nsynth_dataset_reader.provide_batch
-                            if FLAGS.dataset_name == 'nsynth'
+                            if FLAGS.dataset_type == 'nsynth'
                             else slakh_dataset_reader.provide_batch)
     else:
         provide_batch_fn = dataset_reader.provide_batch
