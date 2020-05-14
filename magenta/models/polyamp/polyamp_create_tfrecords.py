@@ -29,10 +29,10 @@ import collections
 import copy
 import os
 
+import absl.flags
 import apache_beam as beam
 import librosa
 import tensorflow as tf
-import absl.flags
 from absl import app, logging
 from apache_beam.metrics import Metrics
 
@@ -48,16 +48,16 @@ absl.flags.DEFINE_string('wav_dir', None, 'Directory for wav files.')
 absl.flags.DEFINE_string('midi_dir', None, 'Directory for midi files.')
 absl.flags.DEFINE_integer('num_shards', 0, 'number of output shards')
 absl.flags.DEFINE_string('expected_splits', 'train,validation,test',
-                    'Comma separated list of expected splits.')
+                         'Comma separated list of expected splits.')
 absl.flags.DEFINE_integer('min_length', 5, 'minimum length for a segment')
 absl.flags.DEFINE_integer('max_length', 20, 'maximum length for a segment')
 absl.flags.DEFINE_integer('sample_rate', 16000,
-                     'sample_rate of the output files')
+                          'sample_rate of the output files')
 
 # There seems to be inconsistency between all_src.mid and the stems in the slakh dataset.
 # The individual stems are what is actually being played in the wav file
 absl.flags.DEFINE_boolean('use_midi_stems', True,
-                     'If true, use midi stems instead of the single midi file')
+                          'If true, use midi stems instead of the single midi file')
 absl.flags.DEFINE_boolean(
     'add_wav_glob', False,
     'If true, will add * to end of wav paths and use all matching files.')

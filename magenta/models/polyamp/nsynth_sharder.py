@@ -29,7 +29,6 @@ flags.DEFINE_list(
     'for the Beam Pipeline.')
 
 
-
 def reduce_func(key, dataset):
     filename = tf.strings.join([FLAGS.output_directory, tf.strings.as_string(key)])
     writer = tf.data.experimental.TFRecordWriter(filename)
@@ -50,5 +49,6 @@ def shard(argv):
         writer = tf.data.experimental.TFRecordWriter(filename)
         writer.write(sharded)
 
+
 if __name__ == '__main__':
-  app.run(shard)
+    app.run(shard)

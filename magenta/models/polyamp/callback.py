@@ -21,11 +21,11 @@ import tensorflow as tf
 import tensorflow.keras.backend as K
 from tensorflow.keras.callbacks import Callback
 
-from magenta.models.polyamp import constants, sequence_prediction_util
-from magenta.models.polyamp.accuracy_util import \
-    convert_multi_instrument_probs_to_predictions, flatten_f1_wrapper, get_last_channel, \
-    multi_track_prf_wrapper, calculate_frame_metrics
 from magenta.models.onsets_frames_transcription.metrics import calculate_metrics
+from magenta.models.polyamp import constants, sequence_prediction_util
+from magenta.models.polyamp.accuracy_util import calculate_frame_metrics, \
+    convert_multi_instrument_probs_to_predictions, flatten_f1_wrapper, get_last_channel, \
+    multi_track_prf_wrapper
 from magenta.music import midi_io
 
 MelodicPredictionOutputMetrics = (

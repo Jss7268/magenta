@@ -166,10 +166,10 @@ def evaluate(data_fn,
     hparams.slakh_batch_size = 1
 
     dataset = data_fn(preprocess_examples=preprocess_examples,
-                       is_training=False,
-                       shuffle_examples=False,
-                       skip_n_initial_records=0,
-                       hparams=hparams)
+                      is_training=False,
+                      shuffle_examples=False,
+                      skip_n_initial_records=0,
+                      hparams=hparams)
 
     model_wrapper = ModelWrapper(model_dir, ModelType.FULL,
                                  batch_size=hparams.batch_size,
