@@ -22,7 +22,7 @@ from tensorflow.keras import backend as K, layers
 from tensorflow.keras.layers import Conv2D, ELU, MaxPooling2D
 
 from magenta.models.polyamp import constants, sequence_prediction_util
-from magenta.models.polyamp.timbre_dataset_reader import NoteCropping, get_cqt_index, get_mel_index
+from magenta.models.polyamp.timbre_dataset_util import NoteCropping, get_cqt_index, get_mel_index
 from magenta.music import midi_io
 
 

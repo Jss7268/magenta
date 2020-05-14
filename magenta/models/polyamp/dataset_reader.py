@@ -37,7 +37,9 @@ import tensorflow as tf
 import tensorflow.keras.backend as K
 from tensorflow_core import TensorShape
 
-from magenta.models.polyamp import audio_transform, constants, instrument_family_mappings
+from magenta.models.polyamp import audio_transform, constants, instrument_family_mappings, \
+    timbre_dataset_util
+from magenta.models.polyamp.timbre_dataset_util import convert_note_cropping_to_sequence_record
 from magenta.music import audio_io, sequences_lib
 from magenta.music.protobuf import music_pb2
 
@@ -388,14 +390,7 @@ def preprocess_example(example_proto, hparams, is_training, parse_proto=True):
 
     if hparams.split_pianoroll:
         # make a second spec that will be used for timbre prediction
-        temp_hparams = copy.deepcopy(hparams)
-        temp_hparams.spec_hop_length = hparams.timbre_hop_length
-        temp_hparams.spec_type = hparams.timbre_spec_type
-        temp_hparams.spec_log_amplitude = hparams.timbre_spec_log_amplitude
-        timbre_spec = wav_to_spec_op(audio, hparams=temp_hparams)
-        if hparams.timbre_spec_log_amplitude:
-            timbre_spec = timbre_spec - librosa.power_to_db(np.array([1e-9]))[0]
-            timbre_spec /= K.max(timbre_spec)
+        timbre_spec = timbre_dataset_util.create_timbre_spectrogram(audio, hparams)
         spec = (spec, timbre_spec)
         labels, label_weights, onsets, offsets, velocities = (
             sequence_to_multi_pianoroll_op(sequence, velocity_range, hparams=hparams)

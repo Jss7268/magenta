@@ -14,7 +14,6 @@
 # limitations under the License.
 
 import collections
-import copy
 import functools
 
 import librosa
@@ -22,7 +21,8 @@ import numpy as np
 import tensorflow.compat.v2 as tf
 import tensorflow.keras.backend as K
 
-from magenta.models.polyamp import constants, dataset_reader, instrument_family_mappings
+from magenta.models.polyamp import constants, instrument_family_mappings
+from magenta.music import audio_io
 from magenta.music.protobuf import music_pb2
 
 FeatureTensors = collections.namedtuple('FeatureTensors', ('spec', 'note_croppings'))
@@ -51,12 +51,19 @@ def timbre_input_tensors_to_model_input(input_tensors):
     return features, labels
 
 
-def create_spectrogram(audio, hparams):
+def create_timbre_spectrogram(audio, hparams):
     """Create either a CQT or mel spectrogram"""
-    audio = audio.numpy()
+    if tf.is_tensor(audio):
+        audio = audio.numpy()
+    if isinstance(audio, bytes):
+        # Get samples from wav data.
+        samples = audio_io.wav_data_to_samples(audio, hparams.sample_rate)
+    else:
+        samples = audio
+
     if hparams.timbre_spec_type == 'mel':
-        spec = librosa.feature.melspectrogram(
-            audio,
+        spec = np.abs(librosa.feature.melspectrogram(
+            samples,
             hparams.sample_rate,
             hop_length=hparams.timbre_hop_length,
             fmin=librosa.midi_to_hz(constants.MIN_TIMBRE_PITCH),
@@ -65,27 +72,23 @@ def create_spectrogram(audio, hparams):
             pad_mode='symmetric',
             htk=hparams.spec_mel_htk,
             power=2
-        ).T
-        spec = librosa.power_to_db(spec)
+        )).T
 
     else:
-        spec = librosa.core.cqt(
-            audio,
+        spec = np.abs(librosa.core.cqt(
+            samples,
             hparams.sample_rate,
             hop_length=hparams.timbre_hop_length,
             fmin=librosa.midi_to_hz(constants.MIN_TIMBRE_PITCH),
             n_bins=constants.TIMBRE_SPEC_BANDS,
             bins_per_octave=constants.BINS_PER_OCTAVE,
             pad_mode='symmetric'
-        ).T
-        spec = librosa.amplitude_to_db(np.abs(spec))
+        )).T
 
     # convert amplitude to power
     if hparams.timbre_spec_log_amplitude:
-        spec = spec - librosa.power_to_db(np.array([1e-9]))[0]
+        spec = librosa.power_to_db(spec) - librosa.power_to_db(np.array([1e-9]))[0]
         spec = spec / np.max(spec)
-    else:
-        spec = librosa.db_to_power(spec)
     return spec
 
 
@@ -110,14 +113,11 @@ def get_mel_index(pitch, hparams):
 
 def include_spectrogram(tensor, hparams=None):
     """Include the spectrogram in our tensor dictionary"""
-    temp_hparams = copy.deepcopy(hparams)
-    temp_hparams.spec_hop_length = hparams.timbre_hop_length
-    temp_hparams.spec_type = hparams.timbre_spec_type
-    temp_hparams.spec_log_amplitude = hparams.timbre_spec_log_amplitude
-    spec = dataset_reader.wav_to_spec_op(tensor['audio'], hparams=temp_hparams)
-    if hparams.timbre_spec_log_amplitude:
-        spec = spec - librosa.power_to_db(np.array([1e-9]))[0]
-        spec /= K.max(spec)
+    spec = tf.py_function(
+        functools.partial(create_timbre_spectrogram, hparams=hparams),
+        [tensor['audio']],
+        tf.float32
+    )
 
     return dict(
         spec=spec,
@@ -169,24 +169,3 @@ def convert_note_cropping_to_sequence_record(tensor, hparams):
         audio=tensor['audio'],
         velocity_range=music_pb2.VelocityRange(min=0, max=100).SerializeToString()
     )
-
-
-def process_for_full_model(reduced_dataset, is_training, hparams):
-    """
-    Continue the pipeline by processing the reduced dataset into a
-    dataset suitable for training the full model.
-    :param reduced_dataset: Dataset with NoteCroppings.
-    :param is_training: Is this for training or evaluation.
-    :param hparams: Hyperparameters
-    :return: A batched dataset to use with the Full Model.
-    """
-    sequence_dataset = reduced_dataset.map(functools.partial(
-        convert_note_cropping_to_sequence_record, hparams=hparams))
-    input_tensors = sequence_dataset.map(functools.partial(
-        dataset_reader.preprocess_example, hparams=hparams, is_training=is_training,
-        parse_proto=False))
-    model_input = input_tensors.map(
-        functools.partial(
-            dataset_reader.input_tensors_to_model_input,
-            hparams=hparams, is_training=is_training))
-    return dataset_reader.create_batch(model_input, hparams=hparams, is_training=is_training)

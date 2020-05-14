@@ -32,7 +32,7 @@ DEFAULT_HPARAMS = {
     **{
         'model_id': None,
         'batch_size': 2,
-        'epochs_per_save': 50,
+        'epochs_per_save': -10,
         'using_plaidml': False,
         'eval_batch_size': 1,
         'predict_batch_size': 1,
