@@ -390,17 +390,7 @@ def preprocess_example(example_proto, hparams, is_training, parse_proto=True):
 
     if hparams.split_pianoroll:
         # make a second spec that will be used for timbre prediction
-        # temp_hparams = copy.deepcopy(hparams)
-        # temp_hparams.spec_hop_length = hparams.timbre_hop_length
-        # temp_hparams.spec_type = hparams.timbre_spec_type
-        # temp_hparams.spec_log_amplitude = hparams.timbre_spec_log_amplitude
-        # timbre_spec = wav_to_spec_op(audio, hparams=temp_hparams)
-        # spec = timbre_dataset_reader.create_timbre_spectrogram(audio, hparams)
         timbre_spec = timbre_dataset_util.create_timbre_spectrogram(audio, hparams)
-        #
-        # if hparams.timbre_spec_log_amplitude:
-        #     timbre_spec = timbre_spec - librosa.power_to_db(np.array([1e-9]))[0]
-        #     timbre_spec /= K.max(timbre_spec)
         spec = (spec, timbre_spec)
         labels, label_weights, onsets, offsets, velocities = (
             sequence_to_multi_pianoroll_op(sequence, velocity_range, hparams=hparams)
