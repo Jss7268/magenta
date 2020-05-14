@@ -1,16 +1,7 @@
-# Copyright 2020 Jack Spencer Smith.
+# Copyright 2020 A. Anonymous. - The PolyAMP Authors.
 #
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
+# We have removed the license from our anonymized code.
+# All rights reserved.
 
 import tensorflow as tf
 import tensorflow.keras.backend as K
@@ -315,7 +306,19 @@ def flatten_accuracy_wrapper():
 
 def calculate_frame_metrics(frame_labels, frame_predictions):
     # Copyright 2020 The Magenta Authors.
-    # Modifications by Jack Spencer Smith.
+    # Modifications Copyright 2020 A. Anonymous. - The PolyAMP Authors.
+    #
+    # Licensed under the Apache License, Version 2.0 (the "License");
+    # you may not use this file except in compliance with the License.
+    # You may obtain a copy of the License at
+    #
+    #     http://www.apache.org/licenses/LICENSE-2.0
+    #
+    # Unless required by applicable law or agreed to in writing, software
+    # distributed under the License is distributed on an "AS IS" BASIS,
+    # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+    # See the License for the specific language governing permissions and
+    # limitations under the License.
     """Calculate frame-based metrics."""
     frame_labels_bool = tf.cast(frame_labels, tf.bool)
     frame_predictions_bool = tf.cast(frame_predictions, tf.bool)

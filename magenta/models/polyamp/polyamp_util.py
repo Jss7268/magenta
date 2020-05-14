@@ -1,5 +1,5 @@
 # Copyright 2020 The Magenta Authors.
-# Modifications Copyright 2020 Jack Smith.
+# Modifications Copyright 2020 A. Anonymous. - The PolyAMP Authors.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
