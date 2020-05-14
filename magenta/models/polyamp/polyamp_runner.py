@@ -25,7 +25,7 @@ from absl import app, logging
 from dotmap import DotMap
 
 from magenta.models.polyamp import configs, dataset_reader, model_util, nsynth_dataset_reader, \
-    slakh_dataset_reader, train_util
+    slakh_dataset_reader, polyamp_util
 from magenta.models.polyamp.dataset_reader import merge_data_functions
 
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
@@ -78,7 +78,7 @@ absl.flags.DEFINE_boolean('use_tpu', False,
 absl.flags.DEFINE_enum('mode', 'train', ['train', 'eval', 'predict'],
                        'Which mode to use.')
 absl.flags.DEFINE_string(
-    'log', 'ERROR',
+    'log', 'INFO',
     'The threshold for what messages will be logged: '
     'DEBUG, INFO, WARN, ERROR, or FATAL.')
 absl.flags.DEFINE_string(
@@ -99,6 +99,10 @@ absl.flags.DEFINE_string(
     'transcribed_file_suffix', 'predicted',
     'Optional suffix to add to transcribed files.')
 
+absl.flags.DEFINE_boolean(
+    'load_full', None,
+    'Whether to use use the weights saved from full training')
+
 
 def run(config_map, data_fn, additional_trial_info):
     """Run training or evaluation."""
@@ -109,6 +113,7 @@ def run(config_map, data_fn, additional_trial_info):
     else:
         config = config_map[model_util.ModelType[FLAGS.model_type].value]
     model_dir = os.path.expanduser(FLAGS.model_dir)
+    model_type = model_util.ModelType[FLAGS.model_type]
 
     hparams = config.hparams
 
@@ -123,26 +128,35 @@ def run(config_map, data_fn, additional_trial_info):
     hparams.split_pianoroll = model_util.ModelType[FLAGS.model_type] is model_util.ModelType.FULL
 
     if FLAGS.mode == 'train':
-        train_util.train(
+        polyamp_util.train(
             data_fn=data_fn,
             model_dir=model_dir,
-            model_type=model_util.ModelType[FLAGS.model_type],
+            model_type=model_type,
             preprocess_examples=FLAGS.preprocess_examples,
+            load_full=FLAGS.load_full,
             hparams=hparams,
             num_steps=FLAGS.num_steps)
+
     elif FLAGS.mode == 'predict':
-        train_util.transcribe(data_fn=data_fn,
-                              model_dir=model_dir,
-                              model_type=model_util.ModelType[FLAGS.model_type],
-                              path=FLAGS.audio_filename,
-                              file_suffix=FLAGS.transcribed_file_suffix,
-                              hparams=hparams
-                              )
+        polyamp_util.transcribe(
+            data_fn=data_fn,
+            model_dir=model_dir,
+            model_type=model_type,
+            path=FLAGS.audio_filename,
+            file_suffix=FLAGS.transcribed_file_suffix,
+            load_full=FLAGS.load_full,
+            hparams=hparams)
+
     elif FLAGS.mode == 'eval':
-        train_util.evaluate(data_fn=data_fn, model_dir=model_dir,
-                            model_type=model_util.ModelType[FLAGS.model_type],
-                            preprocess_examples=FLAGS.preprocess_examples, hparams=hparams,
-                            num_steps=FLAGS.eval_num_steps, note_based=FLAGS.note_based)
+        polyamp_util.evaluate(
+            data_fn=data_fn,
+            model_dir=model_dir,
+            model_type=model_type,
+            preprocess_examples=FLAGS.preprocess_examples,
+            load_full=FLAGS.load_full,
+            hparams=hparams,
+            num_steps=FLAGS.eval_num_steps,
+            note_based=FLAGS.note_based)
     else:
         raise ValueError('Unknown/unsupported mode: %s' % FLAGS.mode)
 

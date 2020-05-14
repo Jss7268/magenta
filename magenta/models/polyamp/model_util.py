@@ -37,7 +37,7 @@ from magenta.models.polyamp.data_generator import DataGenerator
 from magenta.models.polyamp.full_model import FullModel
 from magenta.models.polyamp.layer_util import get_croppings_for_single_image
 from magenta.models.polyamp.melodic_model import MelodicModel
-from magenta.models.polyamp.timbre_dataset_reader import NoteCropping
+from magenta.models.polyamp.timbre_dataset_util import NoteCropping
 from magenta.models.polyamp.timbre_model import TimbreModel
 
 
@@ -88,26 +88,101 @@ class ModelWrapper:
         else:
             self.metrics = FullPredictionMetrics(self.generator, self.hparams, save_dir=save_dir)
 
-    def get_model(self):
-        return self.model
+    def build_model(self, melodic_model=None, timbre_model=None, compile_=True):
+        """Build the model architecture depending on the type.
+        Full Models can be built with pre-built Melodic or Timbre
+        Models or they can be built here as well.
+        """
+        if self.type is ModelType.MELODIC or (self.type is ModelType.FULL
+                                              and melodic_model is None):
+            melodic_model, losses, accuracies = MelodicModel(self.hparams).get_melodic_model()
+            if self.type == ModelType.MELODIC:
+                if compile_:
+                    melodic_model.compile(Adam(self.hparams.learning_rate,
+                                               decay=self.hparams.decay_rate,
+                                               clipnorm=self.hparams.clip_norm),
+                                          metrics=accuracies, loss=losses)
+                self.model = melodic_model
 
-    def _save_model_with_metrics(self, epoch_num):
-        if self.type == ModelType.MELODIC or self.type == ModelType.FULL:
-            id_tup = (self.model_dir, self.type.name, self.id,
-                      self.metrics.metrics_history[-1].frames['f1_score'].numpy() * 100,
-                      self.metrics.metrics_history[-1].onsets['f1_score'].numpy() * 100,
-                      epoch_num)
+        if self.type is ModelType.TIMBRE or (self.type is ModelType.FULL
+                                             and timbre_model is None):
+            timbre_model, losses, accuracies = TimbreModel(self.hparams).get_timbre_model()
+            if self.type is ModelType.TIMBRE:
+                if compile_:
+                    timbre_model.compile(Adam(self.hparams.timbre_learning_rate,
+                                              decay=self.hparams.timbre_decay_rate,
+                                              clipnorm=self.hparams.timbre_clip_norm),
+                                         metrics=accuracies, loss=losses)
+                self.model = timbre_model
+        if self.type is ModelType.FULL:
+            self.model, losses, accuracies = FullModel(melodic_model, timbre_model,
+                                                       self.hparams).get_full_model()
+            self.model.compile(Adam(self.hparams.full_learning_rate),
+                               metrics=accuracies, loss=losses)
+
+        # Only save the model image if we are training on it.
+        if compile_:
+            if not os.path.exists(f'{self.model_dir}/{self.type.name}/{self.id}'):
+                os.makedirs(f'{self.model_dir}/{self.type.name}/{self.id}')
+            plot_model(self.model,
+                       to_file=f'{self.model_dir}/{self.type.name}/{self.id}/model.png',
+                       show_shapes=True,
+                       show_layer_names=False)
+        try:
+            print(self.model.summary())
+        except Exception as e:
+            print(e)
+
+    def load_weights(self, load_full=None, load_id='*'):
+        """Load the weights into the model wrapper.
+        The loading is handled differently for 4 cases:
+        - load_full is False and self.type is a Full Model:
+            Load pre-trained sub-model weights into the Full Model.
+
+        - load_full is False and self.type is a Melodic/Timbre Model:
+            Load the newest checkpoint for the Melodic/Timbre Model.
+
+        - load_full is True and self.type is a Full Model:
+            Load the newest checkpoint for the Full Model.
+
+        - load_full is True and self.type is a Melodic/Timbre Model:
+            Load the weights from the newest Full Model checkpoint
+            into the Melodic/Timbre Model.
+        """
+        if load_full is None:
+            # Default to loading the model's own checkpoint.
+            load_full = self.type is ModelType.FULL
+        if self.type is ModelType.FULL:
+            melodic_model_wrapper = ModelWrapper(
+                self.model_dir, ModelType.MELODIC, hparams=self.hparams)
+            melodic_model_wrapper.build_model(compile_=False)
+            timbre_model_wrapper = ModelWrapper(
+                self.model_dir, ModelType.TIMBRE, hparams=self.hparams)
+            timbre_model_wrapper.build_model(compile_=False)
+
+            self.build_model(melodic_model=melodic_model_wrapper.model,
+                             timbre_model=timbre_model_wrapper.model,
+                             compile_=False)
+            self._load_newest(load_id)
+            if not load_full:
+                melodic_model_wrapper._load_newest()
+                timbre_model_wrapper._load_newest()
         else:
-            id_tup = (self.model_dir, self.type.name, self.id,
-                      self.metrics.metrics_history[-1].timbre_prediction['f1_score'].numpy() * 100,
-                      epoch_num)
-        print('Saving {} model...'.format(self.type.name))
-
-        if not os.path.exists(f'{self.model_dir}/{self.type.name}/{self.id}'):
-            os.makedirs(f'{self.model_dir}/{self.type.name}/{self.id}')
-        self.model.save_weights(self.model_save_format.format(*id_tup))
-        np.save(self.history_save_format.format(*id_tup), [self.metrics.metrics_history])
-        print('Model weights saved at: ' + self.model_save_format.format(*id_tup))
+            self.build_model(compile_=False)
+            if load_full:
+                full_model_wrapper = ModelWrapper(
+                    self.model_dir, ModelType.FULL, hparams=self.hparams)
+                full_model_wrapper.build_model(
+                    melodic_model=(self.model
+                                   if self.type is ModelType.MELODIC
+                                   else None),
+                    timbre_model=(self.model
+                                  if self.type is ModelType.TIMBRE
+                                  else None),
+                    compile_=False)
+                full_model_wrapper._load_newest()
+            else:
+                self._load_newest(load_id)
 
     def train_and_save(self, epoch_num=0):
         if self.model is None:
@@ -130,83 +205,102 @@ class ModelWrapper:
 
         self._save_model_with_metrics(epoch_num)
 
-    def _plot_spectrograms(self, X, temporal_ds=16, freq_ds=4, max_batches=1):
-        for batch_idx in range(max_batches):
-            spec = K.pool2d(X[0], (temporal_ds, freq_ds),
-                            (temporal_ds, freq_ds), padding='same')
-            croppings = get_croppings_for_single_image(
-                spec[batch_idx], X[1][batch_idx],
-                self.hparams, temporal_ds)
-            plt.figure(figsize=(10, 6))
-            num_crops = min(3, K.int_shape(X[1][batch_idx])[0])
-            plt.subplot(int(num_crops / 2 + 1), 2, 1)
-            y_axis = 'cqt_note' if self.hparams.timbre_spec_type == 'cqt' else 'mel'
-            librosa.display.specshow(
-                self._spec_to_db(X[0], batch_idx),
-                y_axis=y_axis,
-                hop_length=self.hparams.timbre_hop_length,
-                fmin=librosa.midi_to_hz(constants.MIN_TIMBRE_PITCH),
-                fmax=librosa.midi_to_hz(constants.MAX_TIMBRE_PITCH),
-                bins_per_octave=constants.BINS_PER_OCTAVE)
-            for i in range(num_crops):
-                plt.subplot(int(num_crops / 2 + 1), 2, i + 2)
-                db = self._spec_to_db(K.expand_dims(croppings, 1), i)
-                librosa.display.specshow(
-                    db,
-                    y_axis=y_axis,
-                    hop_length=self.hparams.timbre_hop_length,
-                    fmin=librosa.midi_to_hz(constants.MIN_TIMBRE_PITCH),
-                    fmax=librosa.midi_to_hz(constants.MAX_TIMBRE_PITCH),
-                    bins_per_octave=constants.BINS_PER_OCTAVE / freq_ds)
-        plt.show()
+    def predict_multi_sequence(self, melodic_spec, timbre_spec,
+                               present_instruments=None, qpm=None):
+        if present_instruments is None:
+            present_instruments = K.expand_dims(np.ones(self.hparams.timbre_num_classes), 0)
+        y_pred = self._split_and_predict(melodic_spec, timbre_spec, present_instruments)
+        multi_track_prf_wrapper(
+            threshold=self.hparams.predict_frame_threshold,
+            multiple_instruments_threshold=self.hparams.multiple_instruments_threshold,
+            hparams=self.hparams, print_report=True, only_f1=False)(
+            K.cast_to_floatx(y_pred[1] > self.hparams.predict_frame_threshold), y_pred[1])
+        permuted_y_probs = K.permute_dimensions(y_pred[1][0], (2, 0, 1))
+        print(f'total mean: '
+              f'{[f"{i}:{K.max(permuted_y_probs[i])}" for i, x in enumerate(permuted_y_probs)]}')
 
-    def _spec_to_db(self, spec_batch, i):
-        if self.hparams.timbre_spec_log_amplitude:
-            db = K.permute_dimensions(K.reshape(spec_batch[i] * 80,
-                                                (spec_batch[i].shape[0],
-                                                 spec_batch[i].shape[1],
-                                                 -1)),
-                                      (2, 1, 0))[-1].numpy() + \
-                 librosa.power_to_db(np.array([1e-9]))[0]
+        frame_predictions = convert_multi_instrument_probs_to_predictions(
+            y_pred[0],
+            self.hparams.predict_frame_threshold,
+            self.hparams.multiple_instruments_threshold)[0]
+        onset_predictions = convert_multi_instrument_probs_to_predictions(
+            y_pred[1],
+            self.hparams.predict_onset_threshold,
+            self.hparams.multiple_instruments_threshold)[0]
+        offset_predictions = convert_multi_instrument_probs_to_predictions(
+            y_pred[2],
+            self.hparams.predict_offset_threshold,
+            self.hparams.multiple_instruments_threshold)[0]
+        active_onsets = convert_multi_instrument_probs_to_predictions(
+            y_pred[1],
+            self.hparams.active_onset_threshold,
+            self.hparams.multiple_instruments_threshold)[0]
+
+        if self.hparams.use_all_instruments:
+            # Mute the instruments we don't want here.
+            # If this happens we are trying to isolate certain
+            # instruments, knowing there may be others.
+            frame_predictions = tf.logical_and(frame_predictions, present_instruments > 0)
+            onset_predictions = tf.logical_and(onset_predictions, present_instruments > 0)
+            offset_predictions = tf.logical_and(offset_predictions, present_instruments > 0)
+            active_onsets = tf.logical_and(active_onsets, present_instruments > 0)
+
+        return sequence_prediction_util.predict_multi_sequence(
+            frame_predictions, onset_predictions,
+            offset_predictions, active_onsets,
+            qpm=qpm, hparams=self.hparams,
+            min_pitch=constants.MIN_MIDI_PITCH)
+
+    def predict_from_spec(self, spec=None, num_croppings=None,
+                          additional_spec=None, qpm=None, *args):
+        if self.type is ModelType.MELODIC:
+            return self._predict_sequence(spec, qpm=qpm)
+        elif self.type is ModelType.TIMBRE:
+            return self._predict_timbre(spec, num_croppings)
         else:
-            db = librosa.power_to_db(tf.transpose(tf.reshape(
-                spec_batch[i], spec_batch[i].shape[0:-1]
-            )).numpy())
-        return db
+            return self.predict_multi_sequence(melodic_spec=spec, timbre_spec=additional_spec)
 
-    def _predict_timbre(self, spec, note_croppings=None):
-        if note_croppings is None:
-            pitch = librosa.note_to_midi('C3')
-            start_idx = 0
-            end_idx = self.hparams.timbre_hop_length * spec.shape[1]
-            note_croppings = [NoteCropping(pitch=pitch,
-                                           start_idx=start_idx,
-                                           end_idx=end_idx)]
-            note_croppings = tf.reshape(note_croppings, (1, 1, 3))
+    def _load_newest(self, id_='*'):
+        """Load the most recent model.
+        Model will be loaded with the specified id, if present.
+        Otherwise, the loading id is ignored.
+        """
+        try:
+            model_weights = sorted(glob.glob(
+                f'{self.model_dir}/{self.type.name}/{id_}/Training Model Weights *.hdf5'),
+                key=os.path.getmtime)[-1]
+            model_history = sorted(
+                glob.glob(f'{self.model_dir}/{self.type.name}/{id_}/Training History *.npy'),
+                key=os.path.getmtime)[-1]
+            self.metrics.load_metrics(np.load(model_history, allow_pickle=True)[0])
+            print('Loading pre-trained model: {}'.format(model_weights))
+            self.model.load_weights(model_weights,
+                                    by_name=False and self.type is not ModelType.FULL,
+                                    skip_mismatch=False and self.type is not ModelType.FULL)
+            print('Model loaded successfully')
+        except IndexError:
+            print(f'No saved models exist at path: {self.model_dir}/{self.type.name}/{id_}/')
+        except Exception as e:
+            print(f'{e}\nCouldn\'t load model at path: {self.model_dir}/{self.type.name}/{id_}/')
+            raise e
 
-        self._plot_spectrograms([spec, note_croppings])
+    def _save_model_with_metrics(self, epoch_num):
+        if self.type == ModelType.MELODIC or self.type == ModelType.FULL:
+            id_tup = (self.model_dir, self.type.name, self.id,
+                      self.metrics.metrics_history[-1].frames['f1_score'].numpy() * 100,
+                      self.metrics.metrics_history[-1].onsets['f1_score'].numpy() * 100,
+                      epoch_num)
+        else:
+            id_tup = (self.model_dir, self.type.name, self.id,
+                      self.metrics.metrics_history[-1].timbre_prediction['f1_score'].numpy() * 100,
+                      epoch_num)
+        print('Saving {} model...'.format(self.type.name))
 
-        timbre_probs = self.model.predict([spec, note_croppings])
-        print(timbre_probs)
-        return K.flatten(tf.nn.top_k(timbre_probs).indices)
-
-    def _predict_sequence(self, spec, qpm=None):
-        y_pred = self.model.predict(spec)
-        frame_predictions = y_pred[0][0] > self.hparams.predict_frame_threshold
-        onset_predictions = y_pred[1][0] > self.hparams.predict_onset_threshold
-        active_onsets = y_pred[1][0] > self.hparams.active_onset_threshold
-        offset_predictions = y_pred[2][0] > self.hparams.predict_offset_threshold
-
-        sequence = sequence_prediction_util.predict_sequence(
-            frame_predictions=frame_predictions,
-            onset_predictions=onset_predictions,
-            offset_predictions=offset_predictions,
-            velocity_values=None,
-            min_pitch=constants.MIN_MIDI_PITCH,
-            hparams=self.hparams,
-            active_onsets=active_onsets,
-            qpm=qpm)
-        return sequence
+        if not os.path.exists(f'{self.model_dir}/{self.type.name}/{self.id}'):
+            os.makedirs(f'{self.model_dir}/{self.type.name}/{self.id}')
+        self.model.save_weights(self.model_save_format.format(*id_tup))
+        np.save(self.history_save_format.format(*id_tup), [self.metrics.metrics_history])
+        print('Model weights saved at: ' + self.model_save_format.format(*id_tup))
 
     def _split_and_predict(self, melodic_spec, timbre_spec,
                            present_instruments, duration=16):
@@ -257,136 +351,80 @@ class ModelWrapper:
                 np.expand_dims(onsets, 0),
                 np.expand_dims(offsets, 0)]
 
-    def predict_multi_sequence(self, melodic_spec, timbre_spec,
-                               present_instruments=None, qpm=None):
-        if present_instruments is None:
-            present_instruments = K.expand_dims(np.ones(self.hparams.timbre_num_classes), 0)
-        y_pred = self._split_and_predict(melodic_spec, timbre_spec, present_instruments)
-        multi_track_prf_wrapper(
-            threshold=self.hparams.predict_frame_threshold,
-            multiple_instruments_threshold=self.hparams.multiple_instruments_threshold,
-            hparams=self.hparams, print_report=True, only_f1=False)(
-            K.cast_to_floatx(y_pred[1] > self.hparams.predict_frame_threshold), y_pred[1])
-        permuted_y_probs = K.permute_dimensions(y_pred[1][0], (2, 0, 1))
-        print(f'total mean: '
-              f'{[f"{i}:{K.max(permuted_y_probs[i])}" for i, x in enumerate(permuted_y_probs)]}')
+    def _predict_timbre(self, spec, note_croppings=None):
+        if note_croppings is None:
+            pitch = librosa.note_to_midi('C3')
+            start_idx = 0
+            end_idx = self.hparams.timbre_hop_length * spec.shape[1]
+            note_croppings = [NoteCropping(pitch=pitch,
+                                           start_idx=start_idx,
+                                           end_idx=end_idx)]
+            note_croppings = tf.reshape(note_croppings, (1, 1, 3))
 
-        frame_predictions = convert_multi_instrument_probs_to_predictions(
-            y_pred[0],
-            self.hparams.predict_frame_threshold,
-            self.hparams.multiple_instruments_threshold)[0]
-        onset_predictions = convert_multi_instrument_probs_to_predictions(
-            y_pred[1],
-            self.hparams.predict_onset_threshold,
-            self.hparams.multiple_instruments_threshold)[0]
-        offset_predictions = convert_multi_instrument_probs_to_predictions(
-            y_pred[2],
-            self.hparams.predict_offset_threshold,
-            self.hparams.multiple_instruments_threshold)[0]
-        active_onsets = convert_multi_instrument_probs_to_predictions(
-            y_pred[1],
-            self.hparams.active_onset_threshold,
-            self.hparams.multiple_instruments_threshold)[0]
+        self._plot_spectrograms([spec, note_croppings])
 
-        if self.hparams.use_all_instruments:
-            # Mute the instruments we don't want here.
-            # If this happens we are trying to isolate certain
-            # instruments, knowing there may be others.
-            # Otherwise, the present_instruments represent the
-            # instruments that we think exist in the track.
-            #
-            # For Example: A guitar-only track would set
-            # use_all_instruments to false, and set guitar to be the
-            # only present instrument. A multi-instrument track could
-            # set use_all_instruments to true, and set guitar to
-            # the only present instrument.
-            frame_predictions = tf.logical_and(frame_predictions, present_instruments > 0)
-            onset_predictions = tf.logical_and(onset_predictions, present_instruments > 0)
-            offset_predictions = tf.logical_and(offset_predictions, present_instruments > 0)
-            active_onsets = tf.logical_and(active_onsets, present_instruments > 0)
+        timbre_probs = self.model.predict([spec, note_croppings])
+        print(timbre_probs)
+        return K.flatten(tf.nn.top_k(timbre_probs).indices)
 
-        return sequence_prediction_util.predict_multi_sequence(
-            frame_predictions, onset_predictions,
-            offset_predictions, active_onsets,
-            qpm=qpm, hparams=self.hparams,
-            min_pitch=constants.MIN_MIDI_PITCH)
+    def _predict_sequence(self, spec, qpm=None):
+        y_pred = self.model.predict(spec)
+        frame_predictions = y_pred[0][0] > self.hparams.predict_frame_threshold
+        onset_predictions = y_pred[1][0] > self.hparams.predict_onset_threshold
+        active_onsets = y_pred[1][0] > self.hparams.active_onset_threshold
+        offset_predictions = y_pred[2][0] > self.hparams.predict_offset_threshold
 
-    def predict_from_spec(self, spec=None, num_croppings=None,
-                          additional_spec=None, qpm=None, *args):
-        if self.type is ModelType.MELODIC:
-            return self._predict_sequence(spec, qpm=qpm)
-        elif self.type is ModelType.TIMBRE:
-            return self._predict_timbre(spec, num_croppings)
+        sequence = sequence_prediction_util.predict_sequence(
+            frame_predictions=frame_predictions,
+            onset_predictions=onset_predictions,
+            offset_predictions=offset_predictions,
+            velocity_values=None,
+            min_pitch=constants.MIN_MIDI_PITCH,
+            hparams=self.hparams,
+            active_onsets=active_onsets,
+            qpm=qpm)
+        return sequence
+
+    def _plot_spectrograms(self, X, temporal_ds=16, freq_ds=4, max_batches=1):
+        for batch_idx in range(max_batches):
+            spec = K.pool2d(X[0], (temporal_ds, freq_ds),
+                            (temporal_ds, freq_ds), padding='same')
+            croppings = get_croppings_for_single_image(
+                spec[batch_idx], X[1][batch_idx],
+                self.hparams, temporal_ds)
+            plt.figure(figsize=(10, 6))
+            num_crops = min(3, K.int_shape(X[1][batch_idx])[0])
+            plt.subplot(int(num_crops / 2 + 1), 2, 1)
+            y_axis = 'cqt_note' if self.hparams.timbre_spec_type == 'cqt' else 'mel'
+            librosa.display.specshow(
+                self._spec_to_db(X[0], batch_idx),
+                y_axis=y_axis,
+                hop_length=self.hparams.timbre_hop_length,
+                fmin=librosa.midi_to_hz(constants.MIN_TIMBRE_PITCH),
+                fmax=librosa.midi_to_hz(constants.MAX_TIMBRE_PITCH),
+                bins_per_octave=constants.BINS_PER_OCTAVE)
+            for i in range(num_crops):
+                plt.subplot(int(num_crops / 2 + 1), 2, i + 2)
+                db = self._spec_to_db(K.expand_dims(croppings, 1), i)
+                librosa.display.specshow(
+                    db,
+                    y_axis=y_axis,
+                    hop_length=self.hparams.timbre_hop_length,
+                    fmin=librosa.midi_to_hz(constants.MIN_TIMBRE_PITCH),
+                    fmax=librosa.midi_to_hz(constants.MAX_TIMBRE_PITCH),
+                    bins_per_octave=constants.BINS_PER_OCTAVE / freq_ds)
+        plt.show()
+
+    def _spec_to_db(self, spec_batch, i):
+        if self.hparams.timbre_spec_log_amplitude:
+            db = K.permute_dimensions(K.reshape(spec_batch[i] * 80,
+                                                (spec_batch[i].shape[0],
+                                                 spec_batch[i].shape[1],
+                                                 -1)),
+                                      (2, 1, 0))[-1].numpy() + \
+                 librosa.power_to_db(np.array([1e-9]))[0]
         else:
-            return self.predict_multi_sequence(melodic_spec=spec, timbre_spec=additional_spec)
-
-    def load_newest(self, id_='*'):
-        """Load the most recent model.
-        Model will be loaded with the specified id, if present.
-        Otherwise, the loading id is ignored.
-        """
-        try:
-            model_weights = sorted(glob.glob(
-                f'{self.model_dir}/{self.type.name}/{id_}/Training Model Weights *.hdf5'),
-                key=os.path.getmtime)[-1]
-            model_history = sorted(
-                glob.glob(f'{self.model_dir}/{self.type.name}/{id_}/Training History *.npy'),
-                key=os.path.getmtime)[-1]
-            self.metrics.load_metrics(np.load(model_history, allow_pickle=True)[0])
-            print('Loading pre-trained model: {}'.format(model_weights))
-            self.model.load_weights(model_weights,
-                                    by_name=False and self.type is not ModelType.FULL,
-                                    skip_mismatch=False and self.type is not ModelType.FULL)
-            print('Model loaded successfully')
-        except IndexError:
-            print(f'No saved models exist at path: {self.model_dir}/{self.type.name}/{id_}/')
-        except Exception as e:
-            print(f'{e}\nCouldn\'t load model at path: {self.model_dir}/{self.type.name}/{id_}/')
-            raise e
-
-    def build_model(self, melodic_model=None, timbre_model=None, compile_=True):
-        """Build the model architecture depending on the type.
-        Full Models can be built with pre-built Melodic or Timbre
-        Models or they can be built here as well.
-        """
-        if self.type is ModelType.MELODIC or (self.type is ModelType.FULL
-                                              and melodic_model is None):
-            melodic_model, losses, accuracies = MelodicModel(self.hparams).get_melodic_model()
-
-            if self.type == ModelType.MELODIC:
-                if compile_:
-                    melodic_model.compile(Adam(self.hparams.learning_rate,
-                                               decay=self.hparams.decay_rate,
-                                               clipnorm=self.hparams.clip_norm),
-                                          metrics=accuracies, loss=losses)
-                self.model = melodic_model
-
-        if self.type is ModelType.TIMBRE or (self.type is ModelType.FULL
-                                             and timbre_model is None):
-            timbre_model, losses, accuracies = TimbreModel(self.hparams).get_timbre_model()
-
-            if self.type is ModelType.TIMBRE:
-                if compile_:
-                    timbre_model.compile(Adam(self.hparams.timbre_learning_rate,
-                                              decay=self.hparams.timbre_decay_rate,
-                                              clipnorm=self.hparams.timbre_clip_norm),
-                                         metrics=accuracies, loss=losses)
-                self.model = timbre_model
-        if self.type is ModelType.FULL:
-            self.model, losses, accuracies = FullModel(melodic_model, timbre_model,
-                                                       self.hparams).get_full_model()
-            self.model.compile(Adam(self.hparams.full_learning_rate),
-                               metrics=accuracies, loss=losses)
-
-        # Only save the model image if we are training on it.
-        if compile_:
-            if not os.path.exists(f'{self.model_dir}/{self.type.name}/{self.id}'):
-                os.makedirs(f'{self.model_dir}/{self.type.name}/{self.id}')
-            plot_model(self.model,
-                       to_file=f'{self.model_dir}/{self.type.name}/{self.id}/model.png',
-                       show_shapes=True,
-                       show_layer_names=False)
-        try:
-            print(self.model.summary())
-        except Exception as e:
-            print(e)
+            db = librosa.power_to_db(tf.transpose(tf.reshape(
+                spec_batch[i], spec_batch[i].shape[0:-1]
+            )).numpy())
+        return db

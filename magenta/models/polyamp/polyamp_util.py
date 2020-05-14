@@ -15,23 +15,23 @@
 
 """Utilities for training."""
 
-import copy
 import functools
 import glob
 import random
 
+import librosa
 import numpy as np
 import tensorflow as tf
 import tensorflow.keras.backend as K
+from absl import logging
 
-from magenta.models.polyamp import constants
+from magenta.models.polyamp import constants, timbre_dataset_util
 from magenta.models.polyamp.callback import EvaluationMetrics, \
     MelodicPredictionMetrics
 from magenta.models.polyamp.data_generator import DataGenerator
-from magenta.models.polyamp.dataset_reader import wav_to_spec_op
+from magenta.models.polyamp.dataset_reader import samples_to_cqt
 from magenta.models.polyamp.model_util import ModelType, ModelWrapper
-from magenta.models.polyamp.timbre_dataset_reader import create_spectrogram
-from magenta.music import audio_io, midi_io
+from magenta.music import midi_io
 
 
 def train(data_fn,
@@ -39,6 +39,7 @@ def train(data_fn,
           model_type,
           preprocess_examples,
           hparams,
+          load_full=False,
           num_steps=50):
     """Train loop."""
 
@@ -54,26 +55,7 @@ def train(data_fn,
                                  batch_size=hparams.batch_size,
                                  steps_per_epoch=hparams.epochs_per_save,
                                  hparams=hparams)
-
-    if model_type == ModelType.MELODIC:
-        model_wrapper.build_model()
-        model_wrapper.load_newest(hparams.load_id)
-    elif model_type == ModelType.TIMBRE:
-        model_wrapper.build_model()
-        model_wrapper.load_newest(hparams.load_id)
-    else:
-        print('building full model')
-        melodic_model_wrapper = ModelWrapper(model_dir, ModelType.MELODIC, hparams=hparams)
-        melodic_model_wrapper.build_model(compile_=False)
-        melodic_model_wrapper.load_newest()
-        timbre_model_wrapper = ModelWrapper(model_dir, ModelType.TIMBRE, hparams=hparams)
-        timbre_model_wrapper.build_model(compile_=False)
-        timbre_model_wrapper.load_newest()
-
-        model_wrapper.build_model(melodic_model=melodic_model_wrapper.get_model(),
-                                  timbre_model=timbre_model_wrapper.get_model())
-
-        model_wrapper.load_newest(hparams.load_id)
+    model_wrapper.load_weights(load_full)
 
     for i in range(num_steps):
         model_wrapper.train_and_save(epoch_num=i)
@@ -84,7 +66,9 @@ def transcribe(data_fn,
                model_type,
                path,
                file_suffix,
-               hparams):
+               hparams,
+               load_full=False,
+               qpm=None):
     if data_fn:
         transcription_data = data_fn(preprocess_examples=True,
                                      is_training=False,
@@ -94,18 +78,10 @@ def transcribe(data_fn,
     else:
         transcription_data = None
 
-    if model_type == ModelType.MELODIC:
-        melodic_model_wrapper = ModelWrapper(model_dir, ModelType.MELODIC,
-                                             dataset=transcription_data,
-                                             batch_size=1, id_=hparams.model_id, hparams=hparams)
-        melodic_model_wrapper.build_model(compile_=False)
-        melodic_model_wrapper.load_newest(hparams.load_id)
-    elif model_type == ModelType.TIMBRE:
-        timbre_model_wrapper = ModelWrapper(model_dir, ModelType.TIMBRE, id_=hparams.model_id,
-                                            dataset=transcription_data, batch_size=1,
-                                            hparams=hparams)
-        timbre_model_wrapper.build_model(compile_=False)
-        timbre_model_wrapper.load_newest(hparams.load_id)
+    model_wrapper = ModelWrapper(model_dir, model_type,
+                                 dataset=transcription_data,
+                                 batch_size=1, id_=hparams.model_id, hparams=hparams)
+    model_wrapper.load_weights(load_full)
 
     if data_fn:
         while True:
@@ -113,76 +89,95 @@ def transcribe(data_fn,
             # Generally, just predict on filenames rather than
             # TFRecords so you don't use this code.
             if model_type is ModelType.MELODIC:
-                x, _ = melodic_model_wrapper.generator.get()
-                sequence_prediction = melodic_model_wrapper.predict_from_spec(x[0])
+                x, _ = model_wrapper.generator.get()
+                sequence_prediction = model_wrapper.predict_from_spec(x[0])
                 midi_filename = path + file_suffix + '.midi'
                 midi_io.sequence_proto_to_midi_file(sequence_prediction, midi_filename)
             elif model_type is ModelType.TIMBRE:
-                x, y = timbre_model_wrapper.generator.get()
-                timbre_prediction = K.get_value(timbre_model_wrapper.predict_from_spec(*x))[0]
+                x, y = model_wrapper.generator.get()
+                timbre_prediction = K.get_value(model_wrapper.predict_from_spec(*x))[0]
                 print(f'True: {x[1][0][0]}{constants.FAMILY_IDX_STRINGS[np.argmax(y[0][0])]}. '
                       f'Predicted: {constants.FAMILY_IDX_STRINGS[timbre_prediction]}')
     else:
         filenames = glob.glob(path)
-
         for filename in filenames:
-            wav_data = tf.io.gfile.GFile(filename, 'rb').read()
+            logging.info('Starting transcription for %s...', filename)
 
-            if model_type == ModelType.MELODIC:
-                spec = wav_to_spec_op(wav_data, hparams=hparams)
+            samples, sr = librosa.load(filename, hparams.sample_rate)
+
+            if model_type is ModelType.TIMBRE:
+                spec = timbre_dataset_util.create_timbre_spectrogram(samples, hparams)
+                # Add "batch" and channel dims.
+                spec = K.cast_to_floatx(tf.reshape(spec, (1, *spec.shape, 1)))
+                timbre_prediction = K.get_value(model_wrapper.predict_from_spec(spec))[0]
+                print(f'File: {filename}. '
+                      f'Predicted: {constants.FAMILY_IDX_STRINGS[timbre_prediction]}')
+                continue
+            elif model_type is ModelType.MELODIC:
+                spec = samples_to_cqt(samples, hparams=hparams)
+                if hparams.spec_log_amplitude:
+                    spec = librosa.power_to_db(spec)
 
                 # Add "batch" and channel dims.
                 spec = tf.reshape(spec, (1, *spec.shape, 1))
-                sequence_prediction = melodic_model_wrapper.predict_from_spec(spec)
-                midi_filename = filename + file_suffix + '.midi'
-                midi_io.sequence_proto_to_midi_file(sequence_prediction, midi_filename)
-            elif model_type == ModelType.TIMBRE:
-                y = audio_io.wav_data_to_samples(wav_data, hparams.sample_rate)
-                spec = create_spectrogram(K.constant(y), hparams)
+
+                logging.info('Running inference...')
+                sequence_prediction = model_wrapper.predict_from_spec(spec, qpm=qpm)
+            else:
+                melodic_spec = samples_to_cqt(samples, hparams=hparams)
+                if hparams.spec_log_amplitude:
+                    melodic_spec = librosa.power_to_db(melodic_spec)
+
+                timbre_spec = timbre_dataset_util.create_timbre_spectrogram(samples, hparams)
+
                 # Add "batch" and channel dims.
-                spec = K.cast_to_floatx(tf.reshape(spec, (1, *spec.shape, 1)))
-                timbre_prediction = K.get_value(timbre_model_wrapper.predict_from_spec(spec))[0]
-                print(f'File: {filename}. '
-                      f'Predicted: {constants.FAMILY_IDX_STRINGS[timbre_prediction]}')
+                melodic_spec = tf.reshape(melodic_spec, (1, *melodic_spec.shape, 1))
+                timbre_spec = tf.reshape(timbre_spec, (1, *timbre_spec.shape, 1))
+
+                logging.info('Running inference...')
+
+                if hparams.present_instruments:
+                    present_instruments = K.expand_dims(hparams.present_instruments, 0)
+                else:
+                    present_instruments = None
+
+                sequence_prediction = (
+                    model_wrapper.predict_multi_sequence(melodic_spec=melodic_spec,
+                                                         timbre_spec=timbre_spec,
+                                                         present_instruments=present_instruments,
+                                                         qpm=qpm)
+                )
+            midi_filename = filename + file_suffix + '.midi'
+            midi_io.sequence_proto_to_midi_file(sequence_prediction, midi_filename)
+
+            logging.info('Transcription written to %s.', midi_filename)
 
 
-def evaluate(data_fn, model_dir, model_type, preprocess_examples, hparams, num_steps=None,
+def evaluate(data_fn,
+             model_dir,
+             model_type,
+             preprocess_examples,
+             hparams,
+             load_full=False,
+             num_steps=None,
              note_based=False):
     """Evaluation loop."""
     hparams.batch_size = 1
     hparams.slakh_batch_size = 1
 
-    transcription_data_base = functools.partial(
-        data_fn,
-        preprocess_examples=preprocess_examples,
-        is_training=False)
-
-    transcription_data = functools.partial(
-        transcription_data_base,
-        shuffle_examples=False, skip_n_initial_records=0)
+    dataset = data_fn(preprocess_examples=preprocess_examples,
+                       is_training=False,
+                       shuffle_examples=False,
+                       skip_n_initial_records=0,
+                       hparams=hparams)
 
     model_wrapper = ModelWrapper(model_dir, ModelType.FULL,
-                                 dataset=transcription_data(hparams=hparams),
                                  batch_size=hparams.batch_size,
                                  steps_per_epoch=hparams.epochs_per_save,
                                  hparams=hparams)
-    if model_type is ModelType.TIMBRE:
-        timbre_model = ModelWrapper(model_dir, ModelType.TIMBRE, hparams=hparams)
-        timbre_model.build_model(compile_=False)
-        model_wrapper.build_model(timbre_model=timbre_model.get_model(), compile_=False)
-        model_wrapper.load_newest(hparams.load_id)
-        model_wrapper = timbre_model
-    elif model_type is ModelType.MELODIC:
-        melodic_model = ModelWrapper(model_dir, ModelType.MELODIC, hparams=hparams, batch_size=1)
-        melodic_model.build_model(compile_=False)
-        model_wrapper.build_model(melodic_model=melodic_model.get_model(), compile_=False)
-        melodic_model.load_newest(hparams.load_id)
-        model_wrapper = melodic_model
-    else:
-        model_wrapper.build_model(compile_=False)
-        model_wrapper.load_newest(hparams.load_id)
+    model_wrapper.load_weights(load_full)
 
-    generator = DataGenerator(transcription_data(hparams=hparams), hparams.batch_size,
+    generator = DataGenerator(dataset, hparams.batch_size,
                               use_numpy=False)
     save_dir = f'{model_dir}/{model_type.name}/{model_wrapper.id}_eval'
 
@@ -194,7 +189,7 @@ def evaluate(data_fn, model_dir, model_type, preprocess_examples, hparams, num_s
                                     is_full=model_type is ModelType.FULL)
     for i in range(num_steps):
         print(f'evaluating step: {i}')
-        metrics.on_epoch_end(i, model=model_wrapper.get_model())
+        metrics.on_epoch_end(i, model=model_wrapper.model)
 
     metric_names = ['true_positives', 'false_positives', 'false_negatives']
 

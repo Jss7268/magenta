@@ -14,7 +14,7 @@ For example:\
 
 - Melodic Model
 ```bash
-python trainer.py \
+python polyamp_runner.py \
     --examples_path=/path/to/maestro/train.tfrecord-* \
     --model_dir=/path/to/models \
     --model_id=ANY_ID_STRING \
@@ -22,7 +22,7 @@ python trainer.py \
 ```
 - Timbre Model
 ```bash
-python trainer.py \
+python polyamp_runner.py \
     --examples_path=/path/to/nsynth/train.tfrecord-* \
     --model_dir=/path/to/models \
     --model_type=TIMBRE \
@@ -31,7 +31,7 @@ python trainer.py \
     --load_id=ID_TO_LOAD
 ```
 ```bash
-python trainer.py \
+python polyamp_runner.py \
     --examples_path=/path/to/slakh/train.tfrecord-* \
     --model_dir=/path/to/models \
     --model_type=TIMBRE \
@@ -41,7 +41,7 @@ python trainer.py \
 ```
 - Full Model
 ```bash
-python trainer.py \
+python polyamp_runner.py \
     --examples_path=/path/to/maestro/train.tfrecord-*,/slakh/train.tfrecord-*,/custom/train.tfrecord-* \
     --nsynth_examples_path=/path/to/nsynth/train.tfrecord-* \
     --model_dir=/path/to/models \
@@ -53,7 +53,7 @@ python trainer.py \
 ## Evaluating
 - Melodic Model
 ```bash
-python trainer.py \
+python polyamp_runner.py \
     --examples_path=/path/to/maestro/train.tfrecord-*,/slakh/train.tfrecord-*,/custom/train.tfrecord-* \
     --nsynth_examples_path=/path/to/nsynth/train.tfrecord-* \
     --model_dir=/path/to/models \

@@ -18,7 +18,8 @@ import numpy as np
 import tensorflow.compat.v2 as tf
 import tensorflow.keras.backend as K
 
-from magenta.models.polyamp import dataset_reader, timbre_dataset_reader
+import magenta.models.polyamp.dataset_reader
+from magenta.models.polyamp import dataset_reader, timbre_dataset_util
 from magenta.music import audio_io
 
 
@@ -83,7 +84,7 @@ def reduce_audio_in_batch(tensor, hparams=None, is_training=True):
         samples_list.append(samples)
 
         instrument_family = tensor['instrument_family'][i]
-        note_croppping_list.append(timbre_dataset_reader.NoteCropping(
+        note_croppping_list.append(timbre_dataset_util.NoteCropping(
             pitch=pitch,
             start_idx=start_idx,
             end_idx=end_idx
@@ -122,6 +123,27 @@ def reduce_audio_in_batch(tensor, hparams=None, is_training=True):
     )
 
 
+def process_for_full_model(reduced_dataset, is_training, hparams):
+    """
+    Continue the pipeline by processing the reduced dataset into a
+    dataset suitable for training the full model.
+    :param reduced_dataset: Dataset with NoteCroppings.
+    :param is_training: Is this for training or evaluation.
+    :param hparams: Hyperparameters
+    :return: A batched dataset to use with the Full Model.
+    """
+    sequence_dataset = reduced_dataset.map(functools.partial(
+        dataset_reader.convert_note_cropping_to_sequence_record, hparams=hparams))
+    input_tensors = sequence_dataset.map(functools.partial(
+        dataset_reader.preprocess_example, hparams=hparams, is_training=is_training,
+        parse_proto=False))
+    model_input = input_tensors.map(
+        functools.partial(
+            dataset_reader.input_tensors_to_model_input,
+            hparams=hparams, is_training=is_training))
+    return dataset_reader.create_batch(model_input, hparams=hparams, is_training=is_training)
+
+
 def provide_batch(examples,
                   hparams,
                   is_training,
@@ -138,7 +160,8 @@ def provide_batch(examples,
     :param shuffle_examples: Randomly shuffle the examples.
     :param skip_n_initial_records: Skip n records in the dataset.
     :param for_full_model: Keep melodic information or discard it.
-    :param kwargs: Unused.
+        This adapts the NSynth dataset to work with the full model.
+    :param kwargs: Unused arguments.
     :return: TensorFlow batched dataset.
     """
 
@@ -152,15 +175,15 @@ def provide_batch(examples,
                           is_training=is_training)
     )
     if for_full_model:
-        dataset = timbre_dataset_reader.process_for_full_model(reduced_dataset,
-                                                               is_training,
-                                                               hparams)
+        dataset = process_for_full_model(reduced_dataset,
+                                         is_training,
+                                         hparams)
     else:
         spec_dataset = reduced_dataset.map(
-            functools.partial(timbre_dataset_reader.include_spectrogram, hparams=hparams)
+            functools.partial(timbre_dataset_util.include_spectrogram, hparams=hparams)
         )
         model_input = spec_dataset.map(
-            timbre_dataset_reader.timbre_input_tensors_to_model_input,
+            timbre_dataset_util.timbre_input_tensors_to_model_input,
         )
         dataset = model_input.batch(hparams.nsynth_batch_size)
 
