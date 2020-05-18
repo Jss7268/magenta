@@ -34,7 +34,7 @@ import numpy as np
 import six
 import tensorflow as tf
 import tensorflow.keras.backend as K
-from tensorflow_core import TensorShape
+from tensorflow import TensorShape
 
 from magenta.models.polyamp import audio_transform, constants, instrument_family_mappings, \
     timbre_dataset_util
